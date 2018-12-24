@@ -9,6 +9,8 @@ Z = [0, 6, 9, 13, 18.5, 26, 34, 43, 51, 76] / 39.3701;
 Q = flipud(Q(:));
 Z = flipud(Z(:));
 
+% Q(1) = Q(1) + 2*pi;
+
 R = D/2 - (Z/H).*D/2;
 X = R.*cos(Q);
 Y = R.*sin(Q);
@@ -23,6 +25,26 @@ YY = RR.*sin(QQ);
 LL = [0; cumsum(sqrt(diff(XX).^2 + diff(YY).^2 + diff(ZZ).^2))];
 L = interp1(QQ, LL, Q, 'linear', 'extrap');
 
+
+
+% bulb position
+num_bulbs = 450;
+Lb = linspace(LL(1), LL(end), num_bulbs)';
+Qb = interp1(LL, QQ, Lb);
+Rb = interp1(LL, RR, Lb);
+Zb = interp1(LL, ZZ, Lb);
+c = ones(num_bulbs, 3);
+
+Qb(1:50) = Qb(1:50) + linspace(1.8*pi, 0, 50)' - pi/3;
+
+Xb = Rb .* cos(Qb);
+Yb = Rb .* sin(Qb);
+
+x0 = 0;
+z0 = H*1/3;
+RRb = sqrt((Xb-x0).^2 + (Zb-z0).^2);  % 
+QQb = atan2(Zb-z0, Xb-x0);
+
 figure(25)
 hold off
 plot3(XX, YY, ZZ)
@@ -31,18 +53,10 @@ xlabel('x'), ylabel('y'), zlabel('z')
 hold on
 plot3(X, Y, Z, 'ks', 'markersize', 10, 'MarkerFaceColor', 'k')
 set(gcf, 'Position', [281    76   744   575])
-
-% bulb position
-num_bulbs = 450;
-Lb = linspace(LL(1), LL(end), num_bulbs)';
-Qb = interp1(LL, QQ, Lb);
-Xb = interp1(LL, XX, Lb);
-Yb = interp1(LL, YY, Lb);
-Zb = interp1(LL, ZZ, Lb);
-c = ones(num_bulbs, 3);
-
 hl = scatter3(Xb, Yb, Zb, 50, c(:,:), 'filled');
 hl.MarkerEdgeColor = [0,0,0];
+
+diff(L)
 
 %%
 % Background pattern
@@ -59,7 +73,7 @@ dt = 0.1;
 Kt = 2*pi/2;
 Kq = 6*pi/(2*pi);
 Kz = 4*pi/H;
-Krr = -2*pi/30e-2;
+Krr = -2*pi/50e-2;
 Kqq = 360/60;
 
 Kd = -1.5/D;  % completes 1(full bright) in D distance
@@ -82,17 +96,19 @@ for k = 1 : round(20/dt)
     
     % center of background pattern
     if mod(k-1,round(3/dt)) == 0
-        x0 = (rand() - 0.5) * D;
-        z0 = rand() * H*2/3;
+%         x0 = (rand() - 0.5) * D;
+%         z0 = rand() * H*2/3;
+        x0 = 0; z0 = H/3;
         RR = sqrt((X-x0).^2 + (Z-z0).^2);  % 
         QQ = atan2(Z-z0, X-x0);
-        pattern_mode = randi(4);
+%         pattern_mode = randi(4);
+        pattern_mode = 2;
     end
     
     if pattern_mode == 1
         B = sin(Kt*time + Kqq*QQ).^3;  % rays
     elseif pattern_mode == 2
-        B = sin(Kt*time + Krr*RR);  % circles
+        B = sin(Kt*time + Krr*RR) > 0.6;  % circles
     elseif pattern_mode == 3
         B = sin(Kt*time + Kq*Q);  % radial
     elseif pattern_mode == 4
