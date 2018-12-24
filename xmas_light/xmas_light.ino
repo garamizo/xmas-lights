@@ -39,6 +39,31 @@ void xmas_light::create_bulbs()
      1.295399300484378e+00,
      1.930398957584563e+00
   };
+
+  float Rc[10];
+  for (int i = 0; i < NUM_CONN; i++)
+  {
+    Rc[i] = diameter/2 - (Zc[i]/height).*diameter/2;
+  }
+
+  int Ndec = 500;
+  float dQ = Qc[9] / Ndec;
+  int sec = 0;
+  for (int i = 0; i < Ndec; i++)
+  {
+    float QQ = i * dQ;
+    if (QQ > Qc[sec])
+      sec++;
+
+    ZZ[i] = interp1(Qc[sec], Qc[sec+1], Zc[sec], Zc[sec+1], QQ);
+    RR = diameter/2 - (ZZ[i]/height)*diameter/2;
+    XX[i] = RR * cos(QQ);
+    YY[i] = RR * sin(QQ);
+  }
+}
+
+float interp1(float X1, float X2, float Y1, float Y2, float x) {
+  return(Y1 + (Y2-Y1)*(x-X1)/(X2-X1));
 }
 
 void setup() {
