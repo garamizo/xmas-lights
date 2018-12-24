@@ -3165,7 +3165,6 @@ int8_t RR[] = {
 
 
 
-
 #include <FastLED.h>
 
 #define LED_PIN     5
@@ -3179,8 +3178,6 @@ float height = 76 / 39.3701;
 float diameter = 33 / 39.3701;
 
 long int count = 0;
-//float QQ[NUM_LEDS], RR[NUM_LEDS];
-//uint8_t RR[NUM_LEDS];
 
 void setup() {
     delay( 3000 ); // power-up safety delay
@@ -3193,44 +3190,48 @@ void loop() {
   const float Kq = 3;
   const float Kz = 4*PI/height;
   const float Krr = -2*PI/50e-2;
-  const float Kqq = 360/60.0;
+  const float Kqq = 360/90.0;
 
   static int pattern_mode = 0;
 
   static long t1 = millis();
   const long dt1 = 5000;
   if (millis() - t1 > dt1) {
-    t1 += dt1;
+    t1 = millis() + dt1;
 
-//    pattern_mode = rand() % 2;
-    pattern_mode = 2;
+//    pattern_mode = rand() % 4;
+    pattern_mode = 1;
 
 
   }
   
   static long t0 = millis();
-  const long dt0 = 100;
+  const long dt0 = 200;
   if (millis() - t0 > dt0) {
-    t0 += dt0;
+    t0 = millis() + dt0;
     
     for (int i = 0; i < NUM_LEDS; i++) {
-      float time = t0 / 1000.0;
-      float B;
+      float time = millis() / 1000.0;
+      float B = 1.0;
+
+      float z = Z[i] * height / 127;
+      B = sin(Kt*time + Kz*z);  // falling rings
   
-      if (pattern_mode == 2)
-          B = sin(Kt*time + Kqq*QQ[i] * 2*PI/127);  // rays
-      else if (pattern_mode == 3)
-          B = sin(Kt*time + Krr*RR[i] * height/127);  // circles
-      else if (pattern_mode == 0)
-          B = sin(Kt*time + Kq*Q[i] * 2*PI/127);  // radial
-      else if (pattern_mode == 1)
-          B = sin(Kt*time + Kz*Z[i] * height/127);  // falling rings
+//      if (pattern_mode == 2)
+//          B = sin(Kt*time + Kqq*QQ[i] * 2*PI/127);  // rays
+//      else if (pattern_mode == 3)
+//          B = sin(Kt*time + Krr*RR[i] * height/127);  // circles
+//      else if (pattern_mode == 0)
+//          B = sin(Kt*time + Kq*Q[i] * 2*PI/127);  // radial
+//      else if (pattern_mode == 1)
+//          B = sin(Kt*time + Kz*Z[i] * height/127);  // falling rings
       
   
       leds[i] = B > 0.5 ? CRGB::White : CRGB::Black;
     }
     FastLED.show();
   }
+  FastLED.delay(1);
 }
 
 
