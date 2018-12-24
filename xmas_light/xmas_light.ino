@@ -3176,6 +3176,7 @@ CRGB leds[NUM_LEDS];
 
 float height = 76 / 39.3701;
 float diameter = 33 / 39.3701;
+uint8_t D[NUM_LEDS];
 
 long int count = 0;
 
@@ -3183,6 +3184,8 @@ void setup() {
     delay( 3000 ); // power-up safety delay
     FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection( TypicalLEDStrip );
     FastLED.setBrightness(  BRIGHTNESS );
+
+    Serial.begin(9600);
 }
 
 void loop() {
@@ -3191,43 +3194,53 @@ void loop() {
   const float Kz = 4*PI/height;
   const float Krr = -2*PI/50e-2;
   const float Kqq = 360/90.0;
+  const float Kd = -1.5/diameter;  // completes 1(full bright) in D distance
+  const float Kte = 1/0.3; // completes 1(full bright) in 1 sec
 
   static int pattern_mode = 0;
+  static float trig_time = millis() / 1000.0;
+  static float c[] = {0.0, 0.0, 0.0};
 
   static long t1 = millis();
   const long dt1 = 5000;
   if (millis() - t1 > dt1) {
-    t1 = millis() + dt1;
+    t1 = millis();
 
-//    pattern_mode = rand() % 4;
-    pattern_mode = 1;
+    pattern_mode = (++count) % 4;
 
+    c[0] = (rand() % 1000) / 1000.0;
+    c[1] = (rand() % 1000) / 1000.0;
+    c[2] = (rand() % 1000) / 1000.0;
+    float x0 = ((rand() % 1000) - 500) * diameter / 1000,
+          y0 = ((rand() % 1000) - 500) * diameter / 1000,
+          z0 = (rand() % 1000) * (2*height/3) / 1000;
+    for (int i = 0; i < NUM_LEDS; i++)
+      D[i] = sqrt((X[i]-x0)*(X[i]-x0) + (Y[i]-y0)*(Y[i]-y0) + (Z[i]-z0)*(Z[i]-z0));
+    trig_time = t1 / 1000.0;
 
   }
   
   static long t0 = millis();
-  const long dt0 = 200;
+  const long dt0 = 50;
   if (millis() - t0 > dt0) {
-    t0 = millis() + dt0;
+    t0 = millis();
     
     for (int i = 0; i < NUM_LEDS; i++) {
       float time = millis() / 1000.0;
-      float B = 1.0;
+      float B;
 
-      float z = Z[i] * height / 127;
-      B = sin(Kt*time + Kz*z);  // falling rings
+      if (pattern_mode == 0)
+          B = sin(Kt*time + Kq*Q[i] * 2*PI/127);  // radial
+      else if (pattern_mode == 1)
+          B = sin(Kt*time + Kz*Z[i] * height/127);  // falling rings
+      else if (pattern_mode == 2)
+          B = sin(Kt*time + Kqq*QQ[i] * 2*PI/127);  // rays
+      else if (pattern_mode == 3)
+          B = sin(Kt*time + Krr*RR[i] * height/127);  // circles
+
+      float F = constrain(sin(Kte*((t0/1000.0)-trig_time)) + Kd*D[i], 0.0, 1.0);
   
-//      if (pattern_mode == 2)
-//          B = sin(Kt*time + Kqq*QQ[i] * 2*PI/127);  // rays
-//      else if (pattern_mode == 3)
-//          B = sin(Kt*time + Krr*RR[i] * height/127);  // circles
-//      else if (pattern_mode == 0)
-//          B = sin(Kt*time + Kq*Q[i] * 2*PI/127);  // radial
-//      else if (pattern_mode == 1)
-//          B = sin(Kt*time + Kz*Z[i] * height/127);  // falling rings
-      
-  
-      leds[i] = B > 0.5 ? CRGB::White : CRGB::Black;
+      leds[i] = F > 0.5 ? CRGB::White : CRGB::Black;
     }
     FastLED.show();
   }
