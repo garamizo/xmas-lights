@@ -3194,7 +3194,7 @@ void loop() {
   const float Kz = 4*PI/height;
   const float Krr = -2*PI/50e-2;
   const float Kqq = 360/90.0;
-  const float Kd = -1.5/diameter;  // completes 1(full bright) in D distance
+  const float Kd = -2.0/diameter;  // completes 1(full bright) in D distance
   const float Kte = 1/0.3; // completes 1(full bright) in 1 sec
 
   static int pattern_mode = 0;
@@ -3207,17 +3207,30 @@ void loop() {
     t1 = millis();
 
     pattern_mode = (++count) % 4;
+  }
 
+  static long t2 = millis();
+  const long dt2 = 1000;
+  if (millis() - t2 > dt2) {
+    t2 = millis();
+
+    trig_time = millis() / 1000.0;
+    
     c[0] = (rand() % 1000) / 1000.0;
     c[1] = (rand() % 1000) / 1000.0;
     c[2] = (rand() % 1000) / 1000.0;
     float x0 = ((rand() % 1000) - 500) * diameter / 1000,
           y0 = ((rand() % 1000) - 500) * diameter / 1000,
           z0 = (rand() % 1000) * (2*height/3) / 1000;
-    for (int i = 0; i < NUM_LEDS; i++)
-      D[i] = sqrt((X[i]-x0)*(X[i]-x0) + (Y[i]-y0)*(Y[i]-y0) + (Z[i]-z0)*(Z[i]-z0));
-    trig_time = t1 / 1000.0;
+    for (int i = 0; i < NUM_LEDS; i++) {
+      float x = X[i] * 0.5*diameter/127 - x0,
+            y = Y[i] * 0.5*diameter/127 - y0,
+            z = Z[i] * height/127 - z0;
+      D[i] = round(sqrt(x*x + y*y + z*z) * 127/height);
+    }
+      
 
+    Serial.println(x0);
   }
   
   static long t0 = millis();
@@ -3238,9 +3251,11 @@ void loop() {
       else if (pattern_mode == 3)
           B = sin(Kt*time + Krr*RR[i] * height/127);  // circles
 
-      float F = constrain(sin(Kte*((t0/1000.0)-trig_time)) + Kd*D[i], 0.0, 1.0);
+//      float F = sin(Kte*((t0/1000.0)-trig_time)) + Kd*D[i];
+      float F = sin(Kte*((t0/1000.0)-trig_time)) + Kd*(D[i] * height/127.0);
   
-      leds[i] = F > 0.5 ? CRGB::White : CRGB::Black;
+//      leds[i] = F > 0.0 ? CRGB::White : CRGB::Black;
+      leds[i] = F > 0.0 ? CRGB(c[0]*255, c[1]*255, c[2]*255) : CRGB::Black;
     }
     FastLED.show();
   }
