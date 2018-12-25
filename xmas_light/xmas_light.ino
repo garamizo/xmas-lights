@@ -3169,7 +3169,7 @@ int8_t RR[] = {
 
 #define LED_PIN     5
 #define NUM_LEDS    450
-#define BRIGHTNESS  32
+#define BRIGHTNESS  64
 #define LED_TYPE    WS2811
 #define COLOR_ORDER GRB
 CRGB leds[NUM_LEDS];
@@ -3194,8 +3194,8 @@ void loop() {
   const float Kz = 4*PI/height;
   const float Krr = -2*PI/50e-2;
   const float Kqq = 360/90.0;
-  const float Kd = -2.0/diameter;  // completes 1(full bright) in D distance
-  const float Kte = 1/0.3; // completes 1(full bright) in 1 sec
+  const float Kd = -1.5/diameter;  // completes 1(full bright) in D distance
+  const float Kte = 1/0.6; // completes 1(full bright) in 1 sec
 
   static int pattern_mode = 0;
   static float trig_time = millis() / 1000.0;
@@ -3206,11 +3206,11 @@ void loop() {
   if (millis() - t1 > dt1) {
     t1 = millis();
 
-    pattern_mode = (++count) % 4;
+    pattern_mode = (++count) % 3;
   }
 
   static long t2 = millis();
-  const long dt2 = 1000;
+  const long dt2 = 2000;
   if (millis() - t2 > dt2) {
     t2 = millis();
 
@@ -3247,15 +3247,22 @@ void loop() {
       else if (pattern_mode == 1)
           B = sin(Kt*time + Kz*Z[i] * height/127);  // falling rings
       else if (pattern_mode == 2)
-          B = sin(Kt*time + Kqq*QQ[i] * 2*PI/127);  // rays
-      else if (pattern_mode == 3)
           B = sin(Kt*time + Krr*RR[i] * height/127);  // circles
+      else if (pattern_mode == 3)
+          B = sin(Kt*time + Kqq*QQ[i] * 2*PI/127);  // rays
+
+      B = constrain(B, 0, 1);
 
 //      float F = sin(Kte*((t0/1000.0)-trig_time)) + Kd*D[i];
       float F = sin(Kte*((t0/1000.0)-trig_time)) + Kd*(D[i] * height/127.0);
-  
+      F = constrain(F, 0.0, 1.0);
+      
+      float r = constrain((c[0]*F*1.5 + B*B*0.5) * 255, 0, 255),
+            g = constrain((c[1]*F*1.5 + B*B*0.5) * 255, 0, 255),
+            b = constrain((c[2]*F*1.5 + B*B*0.5) * 255, 0, 255);
 //      leds[i] = F > 0.0 ? CRGB::White : CRGB::Black;
-      leds[i] = F > 0.0 ? CRGB(c[0]*255, c[1]*255, c[2]*255) : CRGB::Black;
+//      leds[i] = F > 0.0 ? CRGB(c[0]*255*F, c[1]*255*F, c[2]*255*F) : CRGB::Black;
+      leds[i] = CRGB(r, g, b);
     }
     FastLED.show();
   }
