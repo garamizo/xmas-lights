@@ -3195,14 +3195,14 @@ void loop() {
   const float Krr = -2*PI/50e-2;
   const float Kqq = 360/90.0;
   const float Kd = -1.5/diameter;  // completes 1(full bright) in D distance
-  const float Kte = 1/0.6; // completes 1(full bright) in 1 sec
+  const float Kte = 1/0.3; // completes 1(full bright) in 1 sec
 
   static int pattern_mode = 0;
   static float trig_time = millis() / 1000.0;
   static float c[] = {0.0, 0.0, 0.0};
 
   static long t1 = millis();
-  const long dt1 = 5000;
+  const long dt1 = 15000;
   if (millis() - t1 > dt1) {
     t1 = millis();
 
@@ -3210,7 +3210,7 @@ void loop() {
   }
 
   static long t2 = millis();
-  const long dt2 = 2000;
+  const long dt2 = 1000;
   if (millis() - t2 > dt2) {
     t2 = millis();
 
@@ -3252,6 +3252,7 @@ void loop() {
           B = sin(Kt*time + Kqq*QQ[i] * 2*PI/127);  // rays
 
       B = constrain(B, 0, 1);
+//      B = (B > 0.3) ? 1 : 0;
 
 //      float F = sin(Kte*((t0/1000.0)-trig_time)) + Kd*D[i];
       float F = sin(Kte*((t0/1000.0)-trig_time)) + Kd*(D[i] * height/127.0);
@@ -3268,6 +3269,3 @@ void loop() {
   }
   FastLED.delay(1);
 }
-
-
-

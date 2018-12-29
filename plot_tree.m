@@ -1,10 +1,49 @@
-%% Plot tree
+function plot_tree()
+
+%% Build tree
 
 H = 76 / 39.3701;  % height
 D = 33 / 39.3701;  % base diameter
-Nloops = 22;  % number of LED loops around tree
-bulb_dist = 6.8e-2; % distance between bulbs
 
+Q = ([-180, -100, -5, 110, -45, -170, 180, -100, -45, -30] + ...
+    cumsum([0, 1, 1, 1, 2, 2, 1, 3, 3, 7])*360)* pi/180;
+Z = [0, 6, 9, 13, 18.5, 26, 34, 43, 51, 76] / 39.3701;
+Q = flipud(Q(:));
+Z = flipud(Z(:));
+
+R = D/2 - (Z/H).*D/2;
+X = R.*cos(Q);
+Y = R.*sin(Q);
+
+QQ = (Q(1) : -1*pi/180 : Q(end))';
+ZZ = interp1(Q, Z, QQ);
+RR = D/2 - (ZZ/H).*D/2;
+
+XX = RR.*cos(QQ);
+YY = RR.*sin(QQ);
+
+LL = [0; cumsum(sqrt(diff(XX).^2 + diff(YY).^2 + diff(ZZ).^2))];
+L = interp1(QQ, LL, Q, 'linear', 'extrap');
+
+% bulb position
+num_bulbs = 450;
+Lb = linspace(LL(1), LL(end), num_bulbs)';
+Qb = interp1(LL, QQ, Lb);
+Rb = interp1(LL, RR, Lb);
+Zb = interp1(LL, ZZ, Lb);
+c = ones(num_bulbs, 3);
+
+Qb(1:50) = Qb(1:50) + linspace(1.8*pi, 0, 50)' - pi/3;
+
+Xb = Rb .* cos(Qb);
+Yb = Rb .* sin(Qb);
+
+x0 = 0;
+z0 = H*1/3;
+RRb = sqrt((Xb-x0).^2 + (Zb-z0).^2);  % 
+QQb = atan2(Zb-z0, Xb-x0);
+
+%%
 % tree
 [X, Y] = meshgrid(-D/2:2e-2:D/2, -D/2:2e-2:D/2);
 Z = H - sqrt(X.^2 + Y.^2) * H/(D/2);

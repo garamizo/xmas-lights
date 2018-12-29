@@ -25,8 +25,6 @@ YY = RR.*sin(QQ);
 LL = [0; cumsum(sqrt(diff(XX).^2 + diff(YY).^2 + diff(ZZ).^2))];
 L = interp1(QQ, LL, Q, 'linear', 'extrap');
 
-
-
 % bulb position
 num_bulbs = 450;
 Lb = linspace(LL(1), LL(end), num_bulbs)';
@@ -45,15 +43,23 @@ z0 = H*1/3;
 RRb = sqrt((Xb-x0).^2 + (Zb-z0).^2);  % 
 QQb = atan2(Zb-z0, Xb-x0);
 
+[xx, yy] = meshgrid(-D/2:5e-3:D/2, -D/2:5e-3:D/2);
+zz = H - sqrt(xx.^2 + yy.^2) * H/(D/2) - 0.05;
+zz(zz<0) = NaN;
+
+
 figure(25)
 hold off
-plot3(XX, YY, ZZ)
+s = surf(xx, yy, zz);
+s.FaceColor = [0, 0.2, 0];
+s.EdgeColor = 'none';
+hold on
+plot3(XX, YY, ZZ, 'k')
 axis equal
 xlabel('x'), ylabel('y'), zlabel('z')
-hold on
-plot3(X, Y, Z, 'ks', 'markersize', 10, 'MarkerFaceColor', 'k')
+plot3(X, Y, Z, 'rs', 'markersize', 10, 'MarkerFaceColor', 'k')
 set(gcf, 'Position', [281    76   744   575])
-hl = scatter3(Xb, Yb, Zb, 50, c(:,:), 'filled');
+hl = scatter3(Xb, Yb, Zb, 30, c(:,:), 'filled');
 hl.MarkerEdgeColor = [0,0,0];
 
 diff(L)
@@ -96,13 +102,10 @@ for k = 1 : round(20/dt)
     
     % center of background pattern
     if mod(k-1,round(3/dt)) == 0
-%         x0 = (rand() - 0.5) * D;
-%         z0 = rand() * H*2/3;
         x0 = 0; z0 = H/3;
         RR = sqrt((X-x0).^2 + (Z-z0).^2);  % 
         QQ = atan2(Z-z0, X-x0);
-%         pattern_mode = randi(4);
-        pattern_mode = 2;
+        pattern_mode = randi(4);
     end
     
     if pattern_mode == 1
@@ -127,7 +130,6 @@ for k = 1 : round(20/dt)
     
     bin_data = cast(C * 255, 'int8');
     
-
     drawnow()
     pause(dt - toc)
 end
