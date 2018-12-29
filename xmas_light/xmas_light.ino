@@ -3169,20 +3169,18 @@ int8_t RR[] = {
 
 #define LED_PIN     5
 #define NUM_LEDS    450
-#define BRIGHTNESS  64
-#define LED_TYPE    WS2811
-#define COLOR_ORDER GRB
+#define BRIGHTNESS  128  // 0-255
 CRGB leds[NUM_LEDS];
 
-float height = 76 / 39.3701;
-float diameter = 33 / 39.3701;
+const float height = 76 / 39.3701;
+const float diameter = 33 / 39.3701;
 uint8_t D[NUM_LEDS];
 
 long int count = 0;
 
 void setup() {
     delay( 3000 ); // power-up safety delay
-    FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection( TypicalLEDStrip );
+    FastLED.addLeds<WS2811, LED_PIN, RGB>(leds, NUM_LEDS).setCorrection( TypicalLEDStrip );
     FastLED.setBrightness(  BRIGHTNESS );
 
     Serial.begin(9600);
@@ -3258,12 +3256,15 @@ void loop() {
       float F = sin(Kte*((t0/1000.0)-trig_time)) + Kd*(D[i] * height/127.0);
       F = constrain(F, 0.0, 1.0);
       
-      float r = constrain((c[0]*F*1.5 + B*B*0.5) * 255, 0, 255),
-            g = constrain((c[1]*F*1.5 + B*B*0.5) * 255, 0, 255),
-            b = constrain((c[2]*F*1.5 + B*B*0.5) * 255, 0, 255);
-//      leds[i] = F > 0.0 ? CRGB::White : CRGB::Black;
-//      leds[i] = F > 0.0 ? CRGB(c[0]*255*F, c[1]*255*F, c[2]*255*F) : CRGB::Black;
-      leds[i] = CRGB(r, g, b);
+//      float r = constrain((c[0]*F*1.5 + B*B*0.5) * 255, 0, 255),
+//            g = constrain((c[1]*F*1.5 + B*B*0.5) * 255, 0, 255),
+//            b = constrain((c[2]*F*1.5 + B*B*0.5) * 255, 0, 255);
+//      leds[i] = CRGB(r, g, b);
+      
+      const float Krc = 255/(2*PI), Ktc = 255/10.0;
+      uint8_t hue = Krc*Q[i] * 2*PI/127.0 + Ktc*time,
+              val = (1-B) * 255;
+      leds[i] = CHSV(hue, 255, val);
     }
     FastLED.show();
   }
