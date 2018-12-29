@@ -78,7 +78,7 @@ R = sqrt(Y.^2 + X.^2);
 dt = 0.1;
 Kt = 2*pi/2;
 Kq = 6*pi/(2*pi);
-Kz = 4*pi/H;
+Kz = 6*pi/H;
 Krr = -2*pi/50e-2;
 Kqq = 360/60;
 
@@ -105,13 +105,13 @@ for k = 1 : round(20/dt)
         x0 = 0; z0 = H/3;
         RR = sqrt((X-x0).^2 + (Z-z0).^2);  % 
         QQ = atan2(Z-z0, X-x0);
-        pattern_mode = randi(4);
+        pattern_mode = 4; % randi(4);
     end
     
     if pattern_mode == 1
         B = sin(Kt*time + Kqq*QQ).^3;  % rays
     elseif pattern_mode == 2
-        B = sin(Kt*time + Krr*RR) > 0.6;  % circles
+        B = sin(Kt*time + Krr*RR);  % circles
     elseif pattern_mode == 3
         B = sin(Kt*time + Kq*Q);  % radial
     elseif pattern_mode == 4
@@ -126,7 +126,11 @@ for k = 1 : round(20/dt)
     C = (0.7*B .* [1, 1, 1] + 2*F .* c) ./ 1;
     C(C<0) = 0;
     C(C>1) = 1;
-    hl.CData = C;
+    for j = 1 : 450
+        q = mod(Q(j) - Kt*time-pi, 2*pi) - pi;
+        C(j,:) = hsv_soft(q * 127/pi) / 255;
+    end
+    hl.CData = C .* (1-B);
     
     bin_data = cast(C * 255, 'int8');
     
