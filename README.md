@@ -8,8 +8,6 @@ Embelish a christmas tree with colorfull and geometric patterns as a function of
 
 Calculate the spatial position of each bulb from the interpolation along the LED strip length. However, the position of the LED strip connectors must be measured manually. See [map_bulbs.m](map_bulbs.m) for more details.
 
-![](img/map.png)
-
 To execute all light patterns, the bulb positions must be known in cartesian, cylindrical, and Y-axis cylindrical coordinates.
 
 ## Color Pattern Design
