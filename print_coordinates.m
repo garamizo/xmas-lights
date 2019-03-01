@@ -1,3 +1,5 @@
+%% Print each bulb coordinate in C++ (Arduino) code for better performance
+%   Paste on xmas_light.ino
 clc
 
 fprintf('int8_t X[] = {\n')

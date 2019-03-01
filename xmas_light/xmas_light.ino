@@ -3167,13 +3167,13 @@ int8_t RR[] = {
 
 #include <FastLED.h>
 
-#define LED_PIN     5
-#define NUM_LEDS    450
-#define BRIGHTNESS  128  // 0-255
+#define LED_PIN     5  // LED strip control pin
+#define NUM_LEDS    450  // 9 strips, 50 bulbs each
+#define BRIGHTNESS  128  // range: 0-255
 CRGB leds[NUM_LEDS];
 
-const float height = 76 / 39.3701;
-const float diameter = 33 / 39.3701;
+const float height = 76 / 39.3701;  // tree height
+const float diameter = 33 / 39.3701;  // tree base diameter
 uint8_t D[NUM_LEDS];
 
 long int count = 0;
@@ -3187,52 +3187,26 @@ void setup() {
 }
 
 void loop() {
-  const float Kt = PI;
+  const float Kt = PI;  // for meaning of these constants, see measure_bulb.m
   const float Kq = 3;
   const float Kz = 4*PI/height;
   const float Krr = -2*PI/50e-2;
   const float Kqq = 360/90.0;
-  const float Kd = -1.5/diameter;  // completes 1(full bright) in D distance
-  const float Kte = 1/0.3; // completes 1(full bright) in 1 sec
-
+ 
   static int pattern_mode = 0;
-  static float trig_time = millis() / 1000.0;
   static float c[] = {0.0, 0.0, 0.0};
 
+  // change pattern =================================
   static long t1 = millis();
-  const long dt1 = 15000;
+  const long dt1 = 15000;  // pattern period
   if (millis() - t1 > dt1) {
     t1 = millis();
-
     pattern_mode = (++count) % 3;
   }
 
-  static long t2 = millis();
-  const long dt2 = 1000;
-  if (millis() - t2 > dt2) {
-    t2 = millis();
-
-    trig_time = millis() / 1000.0;
-    
-    c[0] = (rand() % 1000) / 1000.0;
-    c[1] = (rand() % 1000) / 1000.0;
-    c[2] = (rand() % 1000) / 1000.0;
-    float x0 = ((rand() % 1000) - 500) * diameter / 1000,
-          y0 = ((rand() % 1000) - 500) * diameter / 1000,
-          z0 = (rand() % 1000) * (2*height/3) / 1000;
-    for (int i = 0; i < NUM_LEDS; i++) {
-      float x = X[i] * 0.5*diameter/127 - x0,
-            y = Y[i] * 0.5*diameter/127 - y0,
-            z = Z[i] * height/127 - z0;
-      D[i] = round(sqrt(x*x + y*y + z*z) * 127/height);
-    }
-      
-
-    Serial.println(x0);
-  }
-  
+  // update bulb color =============================
   static long t0 = millis();
-  const long dt0 = 50;
+  const long dt0 = 50;  
   if (millis() - t0 > dt0) {
     t0 = millis();
     
@@ -3248,19 +3222,8 @@ void loop() {
           B = sin(Kt*time + Krr*RR[i] * height/127);  // circles
       else if (pattern_mode == 3)
           B = sin(Kt*time + Kqq*QQ[i] * 2*PI/127);  // rays
-
       B = constrain(B, 0, 1);
-//      B = (B > 0.3) ? 1 : 0;
 
-//      float F = sin(Kte*((t0/1000.0)-trig_time)) + Kd*D[i];
-      float F = sin(Kte*((t0/1000.0)-trig_time)) + Kd*(D[i] * height/127.0);
-      F = constrain(F, 0.0, 1.0);
-      
-//      float r = constrain((c[0]*F*1.5 + B*B*0.5) * 255, 0, 255),
-//            g = constrain((c[1]*F*1.5 + B*B*0.5) * 255, 0, 255),
-//            b = constrain((c[2]*F*1.5 + B*B*0.5) * 255, 0, 255);
-//      leds[i] = CRGB(r, g, b);
-      
       const float Krc = 255/(2*PI), Ktc = 255/10.0;
       uint8_t hue = Krc*Q[i] * 2*PI/127.0 + Ktc*time,
               val = (1-B) * 255;
