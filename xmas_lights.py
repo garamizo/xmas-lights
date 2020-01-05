@@ -8,20 +8,19 @@ import matplotlib.pyplot as plt
 import cv2
 from scipy.optimize import minimize, Bounds, shgo
 from mpl_toolkits.mplot3d import Axes3D
-from scipy import signal as sig
+from scipy.signal import filtfilt
 
-
-def load_cam_calib(path='akaso_calib'):
+def load_cam_calib(path='akaso_calib.pickle'):
     """Load camera calibration file"""
 
-    file = open('akaso_calib', 'rb')
+    file = open(path, 'rb')
     calib = pickle.load(file)
     file.close()
 
     return calib
 
 
-def load_checkerboard_dataset(calib_file='akaso_calib', npov=5, npts=50):
+def load_checkerboard_dataset(calib_file='akaso_calib.pickle', npov=5, npts=50):
     """Extracts image points from visual data
         Get points from checkerboard used for camera calibration
     """
@@ -45,7 +44,8 @@ def load_checkerboard_dataset(calib_file='akaso_calib', npov=5, npts=50):
 
 
 def load_xmas_tree_dataset(dataset_file='tree_dataset.pickle'):
-
+    """Dataset contains image points and images of 50 light bulbs from 5 points of view
+        It does not contains ground truth label"""
     file = open(dataset_file, 'rb')
     dataset = pickle.load(file)
     file.close()
@@ -55,7 +55,7 @@ def load_xmas_tree_dataset(dataset_file='tree_dataset.pickle'):
     return imgpoints, imgs, None
 
 def plot_images(imgs, imgpoints):
-
+    """Plot images overlaied with the provided image points"""
     npts = imgpoints[0].shape[0]
     npics = len(imgs)
     plt.figure(figsize=(17, np.ceil(npics/3) * 4))
@@ -67,7 +67,8 @@ def plot_images(imgs, imgpoints):
 
 
 def plot_extrinsics(rvecs, tvecs, objpoints):
-    
+    """Plot 3D plots of the camera and object frame and the object points
+        Returns the axes handle"""
     avg_dist = np.mean(np.abs(objpoints.flatten()))
     def plot_frame(ax, trans, R, name, length=avg_dist):
         trans = trans.reshape(-1)
@@ -86,7 +87,6 @@ def plot_extrinsics(rvecs, tvecs, objpoints):
     ax.scatter(corners[:,0], corners[:,1], corners[:,2],
                     c=range(corners.shape[0]), cmap=plt.cm.RdYlGn)
 
-    
     # ax.set(xlim=(-0.3,0.3), ylim=(-0.3,0.3), zlim=(-0.4,0.2))
     ax.view_init(30, 45)
 
@@ -106,7 +106,9 @@ def plot_extrinsics(rvecs, tvecs, objpoints):
 
 
 class Calibrator:
-    """Calculate position of bulbs in Christmas Tree via computer vision"""
+    """Calculate position of bulbs in Christmas Tree via computer vision
+        Extrinsic solution:
+            x: [rvec0, rvec1, ..., tvec0, tvec1, ..., pt0, pt1, pt2, ...]"""
 
     def __init__(self, imgpoints, K, D):
         
@@ -118,7 +120,7 @@ class Calibrator:
         self.npts = imgpoints[0].shape[0]
 
     def project_points(self, x):
-
+        """Project object points in the image space given the extrinsics x"""
         rvecs = list(x[:self.npov*3].reshape(self.npov, 1, 1, 3))
         tvecs = list(x[(self.npov*3):(self.npov*6)].reshape(self.npov, 1, 1, 3))
         objpoints = x[self.npov*6:].reshape(self.npts, 1, 3)
@@ -136,14 +138,14 @@ class Calibrator:
 
         return image_points, jac_x
 
-
     def cost_fcn(self, x):
+        """Mean projection error squared"""
         imgpoints_pred, jac_x = self.project_points(x)
         cost = np.nanmean((np.array(self.imgpoints) - np.array(imgpoints_pred)).flatten()**2)
         return cost
 
-
     def jac_fcn(self, x):
+        """Jacobian of the cost_fcn in respect to x"""
         NPOV = self.npov
         NPTS = self.npts
         imgpoints_pred, jac_x = self.project_points(x)
@@ -166,6 +168,7 @@ class Calibrator:
         return jac_cost
 
     def extrinsic_calibration(self, useJac=True):
+        """Estimate x using bound-constraint optimization"""
         NPOV = self.npov
         NPTS = self.npts
 
@@ -190,66 +193,91 @@ class Calibrator:
         return rvecs, tvecs, objpoints, res
 
 
-def find_flash_events(video_path, time_range):
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    totalFrames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-    frange = np.round(np.array(time_range) * fps)
+class TreeDetector:
+    """Detect timing events of the blinking Christmas lights given an approximate video time range
+        Video must contain a cycle of the flashing pattern
+        Load Arduino/calibrate_xmas_tree sketch on tree, which create the following light pattern:
+            Flashing routine:
+            repeat:
+                All on, 200 ms
+                All off, 200 ms
+                repeat:
+                    i on, 100 ms
+                    i off, 100 ms (except last loop - bug!)
+                All off, 1000 ms
+            
+            total period: 100 + 200 + 49*200 + 1*100 + 1000 + 100
+    """
 
-    frameNum = 0
-    frames = []
-    brights = []
-    while cap.isOpened() and frameNum <= frange[1] + 1.0*fps:
-        frameNum = cap.get(cv2.CAP_PROP_POS_FRAMES)
-        ret, frame = cap.read()
+    def __init__(self, video_path):
+        self.cap = cv2.VideoCapture(video_path)
+        self.fps = self.cap.get(cv2.CAP_PROP_FPS)
+        self.nframes = self.cap.get(cv2.CAP_PROP_FRAME_COUNT)
         
-        if ret and (frameNum > frange[0] - 1.0*fps and
-                    frameNum < frange[1] + 1.0*fps):
-            img = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-            bright = np.mean(img[:,:,2].flatten())
+        self.flash_pattern_time = np.arange(50) * 0.2 + 0.35
 
-            brights.append(bright)
-            frames.append(frameNum)
+        self.THRESH = 240
+        self.KERNEL = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
+        self.SMOOTH_FILT = np.ones(5) / 5
 
-    time = np.arange(totalFrames) / fps
-    brights_interp = np.interp(time, np.array(frames)/fps, np.array(brights))
-    brights_smooth = sig.filtfilt(np.ones(5)/5, 1, brights_interp)
+    def set_time(self, itime):
+        iframe = round(itime * self.fps)
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, iframe)
 
-    frange_fine = [np.argmax(brights_smooth[:int(totalFrames/2)]),
-                   int(totalFrames/2) + np.argmax(brights_smooth[int(totalFrames/2):])]
+    def get_time(self):
+        return (self.cap.get(cv2.CAP_PROP_POS_FRAMES) / self.fps)
 
-    # Flashing routine:
-    # repeat:
-    #     All on, 200 ms
-    #     All off, 200 ms
-    #     repeat:
-    #         i on, 100 ms
-    #         i off, 100 ms (except last loop - bug!)
-    #     All off, 1000 ms
-    #
-    # total period: 100 + 200 + 49*200 + 1*100 + 1000 + 100
-    frame_event = frange_fine[0] + np.round(np.arange(50) * fps*0.2 + fps*0.35)
+    def read(self):
+        return self.cap.read()
 
-    extra = {"time": time, "fps": fps,
-             "brights_interp": brights_interp, "brights_smooth": brights_smooth}
+    def find_flash_events(self, time_tol=1.0, viz=False):
+        """Find brightest frame within +/- a time tolerance
+            Returns time of frame occurrence
+        """
+        ref_time = self.get_time()
+        self.set_time(ref_time - time_tol)
 
-    return frame_event, frange_fine, extra
+        itime = -1
+        time = []
+        brights = []
+        while self.cap.isOpened() and itime <= ref_time + time_tol:
+            itime = self.get_time()
+            ret, frame = self.read()
+            if ret:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
+                brights.append(np.mean(frame[:, :, 2].flatten()))
+                time.append(itime)
 
-class BulbDetector:
+        time_interp = np.arange(ref_time-time_tol, ref_time+time_tol, 1.0/self.fps)
+        brights_interp = np.interp(time_interp, np.array(time), np.array(brights))
+        brights_smooth = filtfilt(self.SMOOTH_FILT, 1, brights_interp)
 
+        pattern_start = np.argmax(brights_smooth)
 
-    def __init__(self):
-        self.thresh = 240
-        self.kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
+        if viz:
+            plt.semilogy(time_interp, brights_interp, '-')
+            plt.semilogy(time_interp, brights_smooth, '-')
+            plt.semilogy(time_interp[pattern_start], brights_smooth[pattern_start], 's', markersize=10)
+            # plt.xlim((frange_fine[1] - 3, frange_fine[1] + 0.1))
+            plt.xlabel('time [s]'), plt.ylabel('Image brightness')
+            plt.legend(["interp", "smooth", "start event", "flash event"])
 
-    def detect(self, frame):
+        return time_interp[pattern_start]
+
+    def segment(self, frame=None, viz_mode=False):
+        """Segment a frame to find a light
+            plot_mode: {0: no plot, 1: plot mask, 2: plot overlay}"""
+        if frame is None:
+            ret, frame = self.read()
+            assert ret, "Video reached EOF"
+
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        value = img[:,:,2]  # goes from 0 to 255
+        value = img[:, :, 2]  # goes from 0 to 255
 
-        T, mask = cv2.threshold(value, self.thresh, 255, cv2.THRESH_BINARY)
+        _, mask = cv2.threshold(value, self.THRESH, 255, cv2.THRESH_BINARY)
 
-        mask_rounded = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self.kernel)
+        mask_rounded = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self.KERNEL)
 
         output = cv2.connectedComponentsWithStats(mask_rounded, connectivity=4, ltype=cv2.CV_32S)
         num_elements = output[0]
@@ -258,24 +286,22 @@ class BulbDetector:
 
         # take largest blob (that is not the background)
         if num_elements > 1:
-            ord = np.argsort(stats[:,4])
-            img_point = centroid[ord[-2],:]
-            area = stats[ord[-2],4]
+            order = np.argsort(stats[:, 4])
+            img_point = centroid[order[-2], :]
+            area = stats[order[-2], 4]
         else:
             img_point = np.ones(2) * np.nan
             area = 0
 
-        return img_point, area, mask_rounded
-
-    def plot(self, frame, plot_mask=False):
-        img_point, area, mask_rounded = self.detect(frame)
-
-        if plot_mask:
-            plt.figure(figsize=(12,9))
+        if viz_mode == 1:
+            plt.figure(figsize=(12, 9))
             plt.imshow(mask_rounded, cmap=plt.cm.get_cmap('gray'))
             plt.show()
 
-        plt.figure(figsize=(12,9))
-        plt.imshow(frame[:,:,[2, 1, 0]])
-        plt.plot(img_point[0], img_point[1], 'rx', markersize=area/50.0, fillstyle='none')
-        plt.show()
+        elif viz_mode == 2:
+            plt.figure(figsize=(12, 9))
+            plt.imshow(frame[:, :, [2, 1, 0]])
+            plt.plot(img_point[0], img_point[1], 'rx', markersize=area/50.0, fillstyle='none')
+            plt.show()
+
+        return img_point, area, mask_rounded
