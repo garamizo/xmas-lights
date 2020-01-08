@@ -30,7 +30,7 @@ get_ipython().run_line_magic('matplotlib', 'inline')
 from xmas_lights import load_checkerboard_dataset, load_xmas_tree_dataset
 from xmas_lights import load_cam_calib, plot_images, plot_extrinsics
 
-calib_intrinsics = load_cam_calib('./akaso_calib')
+calib_intrinsics = load_cam_calib('./akaso_calib.pickle')
 K = calib_intrinsics["K"]
 D = calib_intrinsics["D"]
 
@@ -51,24 +51,53 @@ rvecs, tvecs, objpoints, res = xtmodel.extrinsic_calibration()
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
+import pickle
+
+# %%
+
+from xmas_lights import find_tree_transf
+R00 = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]], dtype=np.float32).T
+r00 = cv2.Rodrigues(R00)[0].flatten()
+t00 = np.array([0, 0, 0.3])
+scale0 = 3
+
+R0, t0, scale, rad_base, res = find_tree_transf(objpoints, r00=r00, t00=t00, scale0=scale0, viz=True)
+# plt.show()
+
+# %
 
 # change inertial frame for easier viz
-R0 = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]]).T
-# R0 = np.eye(3)
-objpoints2 = (objpoints.reshape(-1, 3).dot(R0)).reshape(1, -1, 3)
+# R0 = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]]).T  # old to new origin
+# t0 = np.array([0, 0, 0.3])
+# scale = 0.8
+
+objpoints2 = (objpoints.reshape(-1, 3).dot(R0) * scale + t0).reshape(1, -1, 3)
 rvecs2 = [cv2.Rodrigues(cv2.Rodrigues(rvec)[0].dot(R0))[0] for rvec in rvecs]
+tvecs2 = [tvec * scale - cv2.Rodrigues(rvec)[0].dot(R0).dot(t0) for rvec, tvec in zip(rvecs, tvecs)]
 
-ax = plot_extrinsics(rvecs2, tvecs, objpoints2)
-ax.view_init(30, 30)
-plt.show()
-
-ax = plot_extrinsics(rvecs2, tvecs, objpoints2)
-ax.view_init(90, 0)
-plt.show()
-
-ax = plot_extrinsics(rvecs2, tvecs, objpoints2)
+ax = plot_extrinsics(rvecs2, tvecs2, objpoints2)
 ax.view_init(0, 0)
 plt.show()
+
+# ax = plot_extrinsics(rvecs2, tvecs2, objpoints2)
+# ax.view_init(90, 0)
+# plt.show()
+
+# ax = plot_extrinsics(rvecs2, tvecs2, objpoints2)
+# ax.view_init(0, 0)
+# plt.show()
+
+# xtmodel.cost_fcn(xtmodel.pack(rvecs2, tvecs2, objpoints2))
+
+# %%
+
+# Save calibration in file
+ground_truth = {'rvecs':rvecs2, 'tvecs':tvecs2, 'objpoints':objpoints2}
+dataset = {"imgpoints": imgpoints, "imgs": imgs, "ground_truth":ground_truth}
+
+outfile = open('tree_dataset_mod.pickle', 'wb')
+pickle.dump(dataset, outfile)
+outfile.close()
 
 # %% [markdown]
 # ## Comparing to the ground truth

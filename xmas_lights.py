@@ -69,7 +69,8 @@ def plot_images(imgs, imgpoints):
 def plot_extrinsics(rvecs, tvecs, objpoints):
     """Plot 3D plots of the camera and object frame and the object points
         Returns the axes handle"""
-    avg_dist = np.mean(np.abs(objpoints.flatten()))
+    # avg_dist = np.mean(np.abs(objpoints.flatten()))
+    avg_dist = 0.25
     def plot_frame(ax, trans, R, name, length=avg_dist):
         trans = trans.reshape(-1)
         ax.quiver(trans[0], trans[1], trans[2], R[0,0], R[1,0], R[2,0], color='r', length=length)
@@ -119,12 +120,22 @@ class Calibrator:
         self.npov = len(imgpoints)
         self.npts = imgpoints[0].shape[0]
 
-    def project_points(self, x):
-        """Project object points in the image space given the extrinsics x"""
-        rvecs = list(x[:self.npov*3].reshape(self.npov, 1, 1, 3))
-        tvecs = list(x[(self.npov*3):(self.npov*6)].reshape(self.npov, 1, 1, 3))
-        objpoints = x[self.npov*6:].reshape(self.npts, 1, 3)
+    @staticmethod
+    def pack(rvecs, tvecs, objpoints):
+        """Reshape extrinsic params into an optimization variable"""
+        x = np.hstack((np.reshape(rvecs, -1), np.reshape(tvecs, -1), np.reshape(objpoints, -1)))
+        return x
 
+    @staticmethod
+    def unpack(x, npov, npts):
+        """Reshape optimization variable back into extrinsic params"""
+        rvecs = list(x[:npov*3].reshape(npov, 1, 1, 3))
+        tvecs = list(x[(npov*3):(npov*6)].reshape(npov, 1, 1, 3))
+        objpoints = x[npov*6:].reshape(npts, 1, 3)
+        return rvecs, tvecs, objpoints
+
+    def project_points(self, rvecs, tvecs, objpoints):
+        """Project object points in the image space given the extrinsics x"""
         image_points = []
         jac_x = []
         for rvec, tvec in zip(rvecs, tvecs):
@@ -140,31 +151,34 @@ class Calibrator:
 
     def cost_fcn(self, x):
         """Mean projection error squared"""
-        imgpoints_pred, jac_x = self.project_points(x)
+        rvecs, tvecs, objpoints = self.unpack(x, self.npov, self.npts)
+        imgpoints_pred, _ = self.project_points(rvecs, tvecs, objpoints)
+
         cost = np.nanmean((np.array(self.imgpoints) - np.array(imgpoints_pred)).flatten()**2)
         return cost
 
     def jac_fcn(self, x):
         """Jacobian of the cost_fcn in respect to x"""
-        NPOV = self.npov
-        NPTS = self.npts
-        imgpoints_pred, jac_x = self.project_points(x)
+        rvecs, tvecs, objpoints = self.unpack(x, self.npov, self.npts)
+        imgpoints_pred, jac_x = self.project_points(rvecs, tvecs, objpoints)
 
         jac_cost = 0 * x
-        for i in range(NPOV):
-            for j in range(NPTS):
+        count = int(0)
+        for i in range(self.npov):
+            for j in range(self.npts):
                 err = imgpoints_pred[i][j,0,:] - self.imgpoints[i][j,0,:]
                 if np.any(np.isnan(err)):
                     continue
 
                 rvec_rows = np.arange(3) + 3*i
-                tvec_rows = np.arange(3) + 3*i + 3*NPOV
-                s_rows = np.arange(3) + 3*j + 6*NPOV
+                tvec_rows = np.arange(3) + 3*i + 3*self.npov
+                s_rows = np.arange(3) + 3*j + 6*self.npov
                 jac_cost[rvec_rows] += err[0] * jac_x[i][2*j,:3] + err[1] * jac_x[i][2*j+1,:3]
                 jac_cost[tvec_rows] += err[0] * jac_x[i][2*j,3:6] + err[1] * jac_x[i][2*j+1,3:6]
                 jac_cost[s_rows] += err[0] * jac_x[i][2*j,6:] + err[1] * jac_x[i][2*j+1,6:]
+                count += 1
 
-        jac_cost /= (NPOV * NPTS)  # TODO discount nan samples
+        jac_cost /= count
         return jac_cost
 
     def extrinsic_calibration(self, useJac=True):
@@ -305,3 +319,84 @@ class TreeDetector:
             plt.show()
 
         return img_point, area, mask_rounded
+
+
+def find_tree_transf(objpoints, r00=[0,0,0], t00=[0,0,0], scale0=1.0, rad_base0=0.25, viz=False):
+    """Find best transformation to fit the tree lights in a conic shape"""
+
+    def transf_tree(objpoints, R0, t0, scale, rad_base, height=1.0):
+        """Transform objpoints to new frame and calculate conic-model residuals"""
+        xyz = (objpoints.reshape(-1, 3).dot(R0) * scale + t0).reshape(-1, 3)
+        r = np.sqrt(xyz[:, 0]**2 + xyz[:, 1]**2)
+        zh = (rad_base - r) * height / rad_base
+        return xyz, zh
+
+    R0 = cv2.Rodrigues(r00)[0]
+    t0 = t00
+    # scale = scale0
+
+    def cost_fcn(x):
+        # R0 = cv2.Rodrigues(x[:3])[0]
+        # t0 = x[3:6]
+        # scale = x[6]
+        scale = x[0]
+        rad_base = x[1]
+
+        xyz, zh = transf_tree(objpoints, R0, t0, scale, rad_base)
+        err = xyz[:, 2] - zh
+        return np.mean(err**2) / scale**2
+
+    objp = objpoints.reshape(-1, 3)
+    maxt = np.max(np.abs(objp.flatten()))
+    maxdt = np.max(np.abs(objp - np.mean(objp)).flatten())
+
+    x0 = np.hstack((r00, t00, scale0, rad_base0))
+    lb = np.array([-2*np.pi]*3 + [-maxt]*3 + [0.1/maxdt, 0.1])
+    ub = np.array([2*np.pi]*3 + [maxt]*3 + [10/maxdt, 2])
+
+    x0 = x0[6:8]
+    lb = lb[6:8]
+    ub = ub[6:8]
+
+    res = minimize(cost_fcn, x0, method='trust-constr', bounds=Bounds(lb, ub), 
+                    options={'gtol':1e-6, 'disp': True, 'maxiter':3000, 'verbose':1})
+
+    # R0 = cv2.Rodrigues(res.x[:3])[0]
+    # t0 = res.x[3:6]
+    # scale = res.x[6]
+    # rad_base = res.x[7]
+    scale = res.x[0]
+    rad_base = res.x[1]
+
+    xyz, zh = transf_tree(objpoints, R0, t0, scale, rad_base)
+    xyzh = np.hstack((xyz[:, :2], zh.reshape(-1, 1)))
+
+    if viz:
+        def plot_frame(ax, trans, R, name, length=1.0):
+            trans = trans.reshape(-1)
+            ax.quiver(trans[0], trans[1], trans[2], R[0,0], R[1,0], R[2,0], color='r', length=length)
+            ax.quiver(trans[0], trans[1], trans[2], R[0,1], R[1,1], R[2,1], color='g', length=length)
+            ax.quiver(trans[0], trans[1], trans[2], R[0,2], R[1,2], R[2,2], color='b', length=length)
+            ax.text(trans[0], trans[1], trans[2], str("   ")+name, color='black')
+
+        fig = plt.figure(figsize=(10,10))
+        ax = fig.gca(projection='3d')
+
+        # plot_frame(ax, np.array([[0],[0],[0]]), np.eye(3), "origin")
+        # ax.plot(xyz[:,0], xyz[:,1], xyz[:,2], 'k-', lw=0.5)
+        ax.plot(xyzh[:,0], xyzh[:,1], xyzh[:,2], 'r.-', lw=0.5)
+        # ax.scatter(xyz[:,0], xyz[:,1], xyz[:,2],
+        #                 c=range(xyz.shape[0]), cmap=plt.cm.RdYlGn)
+        # ax.quiver(xyz[:, 0], xyz[:, 1], xyz[:, 2], 
+        #           xyzh[:, 0] - xyz[:, 0], xyzh[:, 1] - xyz[:, 1], xyzh[:, 2] - xyz[:, 2])
+
+        # ax.set(xlim=(-0.3,0.3), ylim=(-0.3,0.3), zlim=(-0.4,0.2))
+        ax.view_init(0, 90)
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_xlim((-1, 1)), ax.set_ylim((-1, 1)), ax.set_zlim((-0.5, 1.5))
+        plt.show()
+
+    return R0, t0, scale, rad_base, res
+    
