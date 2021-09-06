@@ -1,1 +1,6 @@
 *.asv
+.vscode
+.code-workspace
+data
+__pycache__/
+*.pickle

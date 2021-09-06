@@ -2,13 +2,23 @@
 
 Embelish a christmas tree with colorfull and geometric patterns as a function of the position of each light bulb.
 
-![](img/final.gif) 
+![](img/final_updated.gif) 
 
 ## Map Bulb Coordinates
 
-Calculate the spatial position of each bulb from the interpolation along the LED strip length. However, the position of the LED strip connectors must be measured manually. See [map_bulbs.m](map_bulbs.m) for more details.
+Program tree to flash bulbs one at a time, sequentially, with known frequency and color (`Arduino/calibrate_xmas_tree`).
 
-To execute all light patterns, the bulb positions must be known in cartesian, cylindrical, and Y-axis cylindrical coordinates.
+Record in a video the full flashing cycle. Repeate from several viewing angles to observe all bulbs from at least 2 capture angles.
+
+If camera intrinsics are not known, see `calibrate_camera`.
+
+Segment bulb locations for each capture angle, ie. video, with `model_tree/segment_lights.ipynb`.
+
+Create file with bulb locations, `model_tree/outputfile.txt` with `model_tree/model_tree.ipynb`.
+
+![](img/geneva_tree_model.png)
+
+Upload Arduino file `Arduino/xmas_light` into MCU with the update bulb locations.
 
 ## Color Pattern Design
 
