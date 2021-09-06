@@ -16,7 +16,7 @@ Segment bulb locations for each capture angle, ie. video, with `model_tree/segme
 
 Create file with bulb locations, `model_tree/outputfile.txt` with `model_tree/model_tree.ipynb`.
 
-![](img/geneva_tree_model.PNG)
+![](img/geneva_tree_model.png)
 
 Upload Arduino file `Arduino/xmas_light` into MCU with the update bulb locations.
 
