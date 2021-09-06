@@ -1,8 +1,10 @@
 {
 	"folders": [
 		{
-			"path": "/notebooks/xmas-lights"
+			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"python.pythonPath": "/usr/bin/python3"
+	}
 }

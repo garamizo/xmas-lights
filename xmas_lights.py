@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+######/usr/bin/env python3
 
 """Localize bulbs from a Christmas tree."""
 
@@ -58,12 +58,20 @@ def plot_images(imgs, imgpoints):
     """Plot images overlaied with the provided image points"""
     npts = imgpoints[0].shape[0]
     npics = len(imgs)
-    plt.figure(figsize=(17, np.ceil(npics/3) * 4))
+    num_cols = 2.0
+    plt.figure(figsize=(17, np.ceil(npics/num_cols) * 5))
     for i, img in enumerate(imgs):
-        plt.subplot(np.ceil(npics/3), 3, i+1)
+        plt.subplot(np.ceil(npics/num_cols), num_cols, i+1)
         plt.imshow(img[:, :, [2, 1, 0]])
+        colors = plt.cm.RdYlGn(np.linspace(0, 1, npts))
         plt.scatter(imgpoints[i][:, 0, 0], imgpoints[i][:, 0, 1],
-                    c=range(npts), cmap=plt.cm.RdYlGn)
+                    s=150, marker='o', facecolors='none', edgecolors=colors, cmap=plt.cm.RdYlGn)
+        plt.plot(imgpoints[i][:,0,0], imgpoints[i][:,0,1], color='blue')
+
+        for j, pos in enumerate(imgpoints[i]):
+            if np.isfinite(pos[0,0]):
+                plt.text(pos[0,0], pos[0,1], '%d'%j, fontsize=10, color="white")
+
 
 
 def plot_extrinsics(rvecs, tvecs, objpoints):
@@ -102,8 +110,31 @@ def plot_extrinsics(rvecs, tvecs, objpoints):
 
         plot_frame(ax, tvec.flatten(), R, str(i))
 
-    ax.set_aspect('equal', 'box')
+    # ax.set_aspect('box')
+    # ax.set_aspect('equal', 'box')
     return ax
+
+def draw_axis(img, axis_img):
+    # draw origin from camera viewpoint
+    img = cv2.line(img, tuple(axis_img[0,:,:].ravel()), tuple(axis_img[1,:,:].ravel()), (255,0,0), 10)
+    img = cv2.line(img, tuple(axis_img[0,:,:].ravel()), tuple(axis_img[2,:,:].ravel()), (0,255,0), 10)
+    img = cv2.line(img, tuple(axis_img[0,:,:].ravel()), tuple(axis_img[3,:,:].ravel()), (0,0,255), 10)
+    return img
+
+def Rx(q):
+    c, s = np.cos(q), np.sin(q)
+    return np.array([[1, 0, 0], [0, c, -s], [0, s, c]], np.float64)
+
+def Ry(q):
+    c, s = np.cos(q), np.sin(q)
+    return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]], np.float64)
+
+def Rz(q):
+    c, s = np.cos(q), np.sin(q)
+    return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]], np.float64)
+
+def Rod_from_Rxyz(rx, ry, rz):
+    return cv2.Rodrigues(np.matmul(np.matmul(Rx(rx), Ry(ry)), Rz(rz)))[0]
 
 
 class Calibrator:
@@ -132,29 +163,47 @@ class Calibrator:
         rvecs = list(x[:npov*3].reshape(npov, 1, 1, 3))
         tvecs = list(x[(npov*3):(npov*6)].reshape(npov, 1, 1, 3))
         objpoints = x[npov*6:].reshape(npts, 1, 3)
+
+        # print("rvecs: %d\ntvecs: %d\nobjpoints: %d\nx: %d", 
+        # print(rvecs)
         return rvecs, tvecs, objpoints
 
     def project_points(self, rvecs, tvecs, objpoints):
         """Project object points in the image space given the extrinsics x"""
+        # fisheye: [f, c, d, tvec, rvec, skew]
+        # pinhole: [rvec, tvec, f, c, d]
+        # print((jac_x[0].shape))
+
+        # cv2.fisheye.projectPoints -> imagePoints, jacobian
+        #   imagePoints: (numPoints, 1, 2)
+        #   jacobian: (2*numPoints, 15)
+
         image_points = []
         jac_x = []
-        for rvec, tvec in zip(rvecs, tvecs):
-            R, dR = cv2.Rodrigues(rvec)
+        for rvec, tvec in zip(rvecs, tvecs):  # loop over each camera view
+            R, _ = cv2.Rodrigues(rvec)
             # jac: f, c, k(4), rvec, tvec, alf
             #  [du1; dv1; du2; dv2; ...]
             imgp, dimgp = cv2.fisheye.projectPoints(objpoints, rvec, tvec, self.K, self.D)
             jac = dimgp[:, 8:14]
             jac_x.append(np.concatenate((jac, dimgp[:, 11:14].dot(R)), axis=1))
+
+            # imgp, dimgp = cv2.projectPoints(objpoints, rvec, tvec, self.K, self.D)
+            # jac = dimgp[:, :6]
+            # jac_x.append(np.concatenate((jac, dimgp[:, :3].dot(R)), axis=1))
+
             image_points.append(imgp)
 
+        # print(imgp.shape)
         return image_points, jac_x
 
     def cost_fcn(self, x):
         """Mean projection error squared"""
         rvecs, tvecs, objpoints = self.unpack(x, self.npov, self.npts)
         imgpoints_pred, _ = self.project_points(rvecs, tvecs, objpoints)
+        # print(self.imgpoints)
 
-        cost = np.nanmean((np.array(self.imgpoints) - np.array(imgpoints_pred)).flatten()**2)
+        cost = 0.5 * np.nansum((np.array(self.imgpoints) - np.array(imgpoints_pred)).flatten()**2)
         return cost
 
     def jac_fcn(self, x):
@@ -178,21 +227,29 @@ class Calibrator:
                 jac_cost[s_rows] += err[0] * jac_x[i][2*j,6:] + err[1] * jac_x[i][2*j+1,6:]
                 count += 1
 
-        jac_cost /= count
+        # jac_cost /= count
         return jac_cost
 
-    def extrinsic_calibration(self, useJac=True):
+    def extrinsic_calibration(self, useJac=True, x0=None, ub=None, lb=None):
         """Estimate x using bound-constraint optimization"""
+        #TODO Add robust weighting
+        
         NPOV = self.npov
         NPTS = self.npts
 
-        x0 = np.array([0,0,0]*NPOV + [0,0,1]*NPOV + [0,0,0]*NPTS)
-        lb = np.array([-2*np.pi]*3*NPOV + [-4, -4, 0.1]*NPOV + [-4, -4, -4]*NPTS)
-        ub = np.array([2*np.pi]*3*NPOV + [4, 4, 4]*NPOV + [4, 4, 4]*NPTS)
+        # x0 = np.random.rand(NPOV*6 + NPTS*3)
+        # x0 = np.array([0,0,0]*NPOV + [0,0,1]*NPOV + [0,0,0]*NPTS)
+        # x0[:self.npov*3] = np.random.rand(self.npov*3) * 4*np.pi - 2*np.pi
+        # if lb is None:
+        #     lb = np.array([-2*np.pi]*3*NPOV + [-4, -4, 0.1]*NPOV + [-4, -4, -4]*NPTS)
+        # if ub is None:
+        #     ub = np.array([2*np.pi]*3*NPOV + [4, 4, 4]*NPOV + [4, 4, 4]*NPTS)
+        # if x0 is None:
+        #     x0 = np.random.rand(NPOV*6 + NPTS*3) * (ub - lb) + lb
 
         res = minimize(self.cost_fcn, x0, method='trust-constr', bounds=Bounds(lb, ub), 
                        jac=(self.jac_fcn if useJac else None),
-                       options={'gtol':1e-6, 'disp': True, 'maxiter':3000, 'verbose':1})
+                       options={'gtol':1e-6, 'disp': False, 'maxiter':500, 'verbose':2})
         # res = minimize(self.cost_fcn, x0, method='trust-constr', bounds=Bounds(lb, ub),
         #             options={'gtol':1e-6, 'disp': True, 'maxiter':3000, 'verbose':1})
 
@@ -205,6 +262,45 @@ class Calibrator:
         objpoints = res.x[self.npov*6:].reshape(1, self.npts, 3)
 
         return rvecs, tvecs, objpoints, res
+
+    def plot_init_condition(self, imgs, imgpoints, x):
+        """Plot images overlaied with the provided image points"""
+        npts = imgpoints[0].shape[0]
+        npics = len(imgs)
+
+        rvecs, tvecs, objpoints = self.unpack(x, self.npov, self.npts)
+        imgpoints_pred, jac_x = self.project_points(rvecs, tvecs, objpoints)
+        # print(imgpoints_pred)
+        imgpoints = imgpoints_pred
+
+        axis = 0.1 * np.float32([[0,0,0], [1,0,0], [0,1,0], [0,0,1]]).reshape(-1,1,3)
+
+        num_cols = 2.0
+        plt.figure(figsize=(17, np.ceil(npics/num_cols) * 5))
+        for i, img in enumerate(imgs):
+            plt.subplot(np.ceil(npics/num_cols), num_cols, i+1)
+
+            axisproj, jac = cv2.fisheye.projectPoints(axis, rvecs[i], tvecs[i], self.K, self.D)
+            img = draw_axis(img, axisproj)
+
+            # plt.imshow(img[:, :, [2, 1, 0]])
+            plt.imshow(img)
+            colors = plt.cm.RdYlGn(np.linspace(0, 1, npts))
+            plt.scatter(imgpoints[i][:, 0, 0], imgpoints[i][:, 0, 1],
+                        s=150, marker='o', facecolors='none', edgecolors=colors, cmap=plt.cm.RdYlGn)
+            plt.plot(imgpoints[i][:,0,0], imgpoints[i][:,0,1], color='blue')
+
+            # pos_non = np.squeeze(imgpoints[i])
+            # err = np.squeeze(imgpoints_pred[i]) - pos_non
+            # plt.quiver(pos_non[:,0], pos_non[:,1], err[:,0], err[:,1], color='white', scale=1.0)
+
+            for j, pos in enumerate(imgpoints[i]):
+                if np.isfinite(pos[0,0]):
+                    plt.text(pos[0,0], pos[0,1], '%d'%j, fontsize=10, color="white")
+                    # posn = pos.ravel()
+                    # err = imgpoints_pred[i][j].ravel() - posn
+                    # plt.quiver(posn[0], )
+
 
 
 class TreeDetector:
@@ -220,19 +316,23 @@ class TreeDetector:
                     i off, 100 ms (except last loop - bug!)
                 All off, 1000 ms
             
-            total period: 100 + 200 + 49*200 + 1*100 + 1000 + 100
+            total period: 100 + 100 + N*200 = (N + 1)*200 ms
     """
 
-    def __init__(self, video_path):
+    def __init__(self, video_path, num_bulbs=100, hsv_min=(0, 0, 100), hsv_max=(180, 255, 260)):
         self.cap = cv2.VideoCapture(video_path)
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
         self.nframes = self.cap.get(cv2.CAP_PROP_FRAME_COUNT)
         
-        self.flash_pattern_time = np.arange(50) * 0.2 + 0.35
+        self.flash_pattern_time = np.arange(num_bulbs) * 0.2 + 0.2
 
         self.THRESH = 240
-        self.KERNEL = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
+        self.KERNEL = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 21))
         self.SMOOTH_FILT = np.ones(5) / 5
+
+        self.NUM_BULBS = num_bulbs
+        self.HSV_MIN = hsv_min
+        self.HSV_MAX = hsv_max
 
     def set_time(self, itime):
         iframe = round(itime * self.fps)
@@ -244,12 +344,12 @@ class TreeDetector:
     def read(self):
         return self.cap.read()
 
-    def find_flash_events(self, time_tol=1.0, viz=False):
+    def find_flash_events(self, time_tol=2.0, viz=False):
         """Find brightest frame within +/- a time tolerance
             Returns time of frame occurrence
         """
         ref_time = self.get_time()
-        self.set_time(ref_time - time_tol)
+        self.set_time(ref_time - time_tol/2.0)
 
         itime = -1
         time = []
@@ -287,11 +387,15 @@ class TreeDetector:
             assert ret, "Video reached EOF"
 
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        value = img[:, :, 2]  # goes from 0 to 255
+        # value = img[:, :, 2]  # goes from 0 to 255
 
-        _, mask = cv2.threshold(value, self.THRESH, 255, cv2.THRESH_BINARY)
+        # _, mask = cv2.threshold(value, self.THRESH, 255, cv2.THRESH_BINARY)
+        mask = (img[:,:,0] >= self.HSV_MIN[0]) & (img[:,:,0] <= self.HSV_MAX[0]) & \
+                (img[:,:,1] >= self.HSV_MIN[1]) & (img[:,:,1] <= self.HSV_MAX[1]) & \
+                (img[:,:,2] >= self.HSV_MIN[2]) & (img[:,:,2] <= self.HSV_MAX[2])
 
-        mask_rounded = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self.KERNEL)
+        # mask_rounded = cv2.morphologyEx(mask.astype('uint8'), cv2.MORPH_OPEN, self.KERNEL)
+        mask_rounded = mask.astype('uint8')
 
         output = cv2.connectedComponentsWithStats(mask_rounded, connectivity=4, ltype=cv2.CV_32S)
         num_elements = output[0]
@@ -309,7 +413,7 @@ class TreeDetector:
 
         if viz_mode == 1:
             plt.figure(figsize=(12, 9))
-            plt.imshow(mask_rounded, cmap=plt.cm.get_cmap('gray'))
+            plt.imshow(mask_rounded, cmap='gray')
             plt.show()
 
         elif viz_mode == 2:

@@ -22,6 +22,7 @@ def calibrate_fisheye(images_path, CHECKERBOARD=(7, 5)):
     _img_shape = None
     objpoints = [] # 3d point in real world space
     imgpoints = [] # 2d points in image plane.
+    imgfiles = []
 
     for fname in images_path:
         img = cv2.imread(fname)
@@ -37,24 +38,42 @@ def calibrate_fisheye(images_path, CHECKERBOARD=(7, 5)):
             objpoints.append(objp)
             cv2.cornerSubPix(gray, corners, (3, 3), (-1, -1), subpix_criteria)
             imgpoints.append(corners)
+            imgfiles.append(fname)
+
+    # N_OK = len(objpoints)
+    # K = np.zeros((3, 3))
+    # D = np.zeros((4, 1))
+    # rvecs = [np.zeros((1, 1, 3), dtype=np.float64) for i in range(N_OK)]
+    # tvecs = [np.zeros((1, 1, 3), dtype=np.float64) for i in range(N_OK)]
+    # rms, K, D, rvecs, tvecs = \
+    #     cv2.fisheye.calibrate(
+    #         objpoints,
+    #         imgpoints,
+    #         gray.shape[::-1],
+    #         K,
+    #         D,
+    #         rvecs,
+    #         tvecs,
+    #         calibration_flags,
+    #         (cv2.TERM_CRITERIA_EPS+cv2.TERM_CRITERIA_MAX_ITER, 30, 1e-6)
+    #     )
+
+    img_size = (gray.shape[1], gray.shape[0])
 
     N_OK = len(objpoints)
-    K = np.zeros((3, 3))
-    D = np.zeros((4, 1))
-    rvecs = [np.zeros((1, 1, 3), dtype=np.float64) for i in range(N_OK)]
-    tvecs = [np.zeros((1, 1, 3), dtype=np.float64) for i in range(N_OK)]
+    # K = np.zeros((3, 3))
+    # D = np.zeros((4, 1))
     rms, K, D, rvecs, tvecs = \
         cv2.fisheye.calibrate(
             objpoints,
             imgpoints,
             gray.shape[::-1],
-            K,
-            D,
-            rvecs,
-            tvecs,
-            calibration_flags,
-            (cv2.TERM_CRITERIA_EPS+cv2.TERM_CRITERIA_MAX_ITER, 30, 1e-6)
+            K=None,
+            D=None,
+            flags=calibration_flags,
+            criteria=(cv2.TERM_CRITERIA_EPS+cv2.TERM_CRITERIA_MAX_ITER, 30, 1e-6)
         )
+    
     print("Found " + str(N_OK) + " valid images for calibration")
     print("DIM=" + str(_img_shape[::-1]))
     print("K=np.array(" + str(K.tolist()) + ")")
@@ -62,8 +81,8 @@ def calibrate_fisheye(images_path, CHECKERBOARD=(7, 5)):
     print("rms=" + str(rms))
 
     # out = {'K':K, 'D':D, 'Rc':rvecs, 'tc':tvecs}
-    return {'K':K, 'D':D, 'rvecs':rvecs, 'tvecs':tvecs, 'images_path':images_path, \
-        'objpoints':objpoints, 'imgpoints':imgpoints}
+    return {'mtx':K, 'dist':D, 'rvecs':rvecs, 'tvecs':tvecs, 'imgfile':imgfiles, \
+        'objpoints':objpoints, 'imgpoints':imgpoints, 'img_size':img_size, 'ret':rms}
 
 if __name__ == '__main__':
     IMAGESPATH = glob.glob("images/img*.jpg")
