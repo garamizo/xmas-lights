@@ -1,13 +1,13 @@
 #include <FastLED.h>
 #include "coordinates.h"
 
-#define LED_PIN     5  // LED strip control pin
-#define NUM_LEDS    450  // 9 strips, 50 bulbs each
+#define LED_PIN     13  // LED strip control pin
+#define NUM_LEDS    300  // 9 strips, 50 bulbs each
 #define BRIGHTNESS  128  // range: 0-255
 CRGB leds[NUM_LEDS];
 
-const float height = 76 / 39.3701;  // tree height
-const float diameter = 33 / 39.3701;  // tree base diameter
+const float height = 2.40;  // tree height
+const float diameter = 1.51;  // tree base diameter
 uint8_t D[NUM_LEDS];
 
 long int count = 0;

@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cv2
 from scipy.optimize import minimize, Bounds, shgo
+from scipy import signal
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.signal import filtfilt
 
@@ -88,30 +89,32 @@ def plot_extrinsics(rvecs, tvecs, objpoints):
 
     corners = objpoints.reshape(-1, 3)
 
-    fig = plt.figure(figsize=(10,10))
-    ax = fig.gca(projection='3d')
+    plt.figure(figsize=(10,10))
+    views = [(0, 0), (0, 90), (90, 0), (45, 45)]
+    for iv, v in enumerate(views):
+        ax = plt.subplot(2,2,iv+1, projection='3d')
 
-    plot_frame(ax, np.array([[0],[0],[0]]), np.eye(3), "object")
-    ax.plot(corners[:,0], corners[:,1], corners[:,2], 'k.-', lw=0.5)
-    ax.scatter(corners[:,0], corners[:,1], corners[:,2],
-                    c=range(corners.shape[0]), cmap=plt.cm.RdYlGn)
+        plot_frame(ax, np.array([[0],[0],[0]]), np.eye(3), "object")
+        ax.plot(corners[:,0], corners[:,1], corners[:,2], 'k.-', lw=0.5)
+        ax.scatter(corners[:,0], corners[:,1], corners[:,2],
+                        c=range(corners.shape[0]), cmap=plt.cm.RdYlGn)
 
-    # ax.set(xlim=(-0.3,0.3), ylim=(-0.3,0.3), zlim=(-0.4,0.2))
-    ax.view_init(30, 45)
+        ax.set(xlim=(-1.5, 1.5), ylim=(-1.5,1.5), zlim=(-1.5,1.5))
+        # ax.view_init(30, 45)
+        # ax.view_init(90, 0)
+        ax.view_init(v[0], v[1])
 
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
 
-    for i, (tvec, rvec) in enumerate(zip(tvecs, rvecs)):
-        Rvec, _ = cv2.Rodrigues(rvec)
-        R = Rvec.T
-        tvec = -Rvec.T.dot(tvec.flatten())
+        for i, (tvec, rvec) in enumerate(zip(tvecs, rvecs)):
+            Rvec, _ = cv2.Rodrigues(rvec)
+            R = Rvec.T
+            tvec = -Rvec.T.dot(tvec.flatten())
 
-        plot_frame(ax, tvec.flatten(), R, str(i))
+            plot_frame(ax, tvec.flatten(), R, str(i))
 
-    # ax.set_aspect('box')
-    # ax.set_aspect('equal', 'box')
     return ax
 
 def draw_axis(img, axis_img):
@@ -144,12 +147,13 @@ class Calibrator:
 
     def __init__(self, imgpoints, K, D):
         
-        self.imgpoints = imgpoints
+        # self.imgpoints = imgpoints
         self.K = K
         self.D = D
 
         self.npov = len(imgpoints)
         self.npts = imgpoints[0].shape[0]
+        self.imgpoints = [np.reshape(pts, [self.npts, 1, 2]) for pts in imgpoints]
 
     @staticmethod
     def pack(rvecs, tvecs, objpoints):
@@ -184,13 +188,21 @@ class Calibrator:
             R, _ = cv2.Rodrigues(rvec)
             # jac: f, c, k(4), rvec, tvec, alf
             #  [du1; dv1; du2; dv2; ...]
-            imgp, dimgp = cv2.fisheye.projectPoints(objpoints, rvec, tvec, self.K, self.D)
-            jac = dimgp[:, 8:14]
-            jac_x.append(np.concatenate((jac, dimgp[:, 11:14].dot(R)), axis=1))
 
-            # imgp, dimgp = cv2.projectPoints(objpoints, rvec, tvec, self.K, self.D)
-            # jac = dimgp[:, :6]
-            # jac_x.append(np.concatenate((jac, dimgp[:, :3].dot(R)), axis=1))
+            # Optional output 2Nx15 jacobian matrix of derivatives of image points with 
+            # respect to components of the focal lengths, coordinates of the principal point, 
+            # distortion coefficients, rotation vector, translation vector, and the skew. 
+            # imgp, dimgp = cv2.fisheye.projectPoints(objpoints, rvec, tvec, self.K, self.D)
+            # jac = dimgp[:, 8:14]
+            # jac_x.append(np.concatenate((jac, dimgp[:, 11:14].dot(R)), axis=1))
+
+            # Optional output 2Nx(10+<numDistCoeffs>) jacobian matrix of derivatives of 
+            # image points with respect to components of the rotation vector, translation vector, 
+            # focal lengths, coordinates of the principal point and the distortion coefficients.
+            imgp, dimgp = cv2.projectPoints(objpoints, rvec, tvec, self.K, self.D)
+            jac = dimgp[:, :6]
+            # extend jacobian to include objpoints
+            jac_x.append(np.concatenate((jac, dimgp[:, 3:6].dot(R)), axis=1))
 
             image_points.append(imgp)
 
@@ -201,9 +213,11 @@ class Calibrator:
         """Mean projection error squared"""
         rvecs, tvecs, objpoints = self.unpack(x, self.npov, self.npts)
         imgpoints_pred, _ = self.project_points(rvecs, tvecs, objpoints)
-        # print(self.imgpoints)
 
-        cost = 0.5 * np.nansum((np.array(self.imgpoints) - np.array(imgpoints_pred)).flatten()**2)
+        cost = 0.5 * np.nansum((np.array(self.imgpoints) - np.array(imgpoints_pred))**2)
+
+        # regularize because some points do not have enough pov for triangulation
+        cost += 10 * np.sum(objpoints**2)
         return cost
 
     def jac_fcn(self, x):
@@ -227,7 +241,9 @@ class Calibrator:
                 jac_cost[s_rows] += err[0] * jac_x[i][2*j,6:] + err[1] * jac_x[i][2*j+1,6:]
                 count += 1
 
-        # jac_cost /= count
+        # regularize because some points do not have enough pov for triangulation
+        jac_cost[-(3*self.npts):] += 10 * 2 * x[-(3*self.npts):]
+
         return jac_cost
 
     def extrinsic_calibration(self, useJac=True, x0=None, ub=None, lb=None):
@@ -249,7 +265,10 @@ class Calibrator:
 
         res = minimize(self.cost_fcn, x0, method='trust-constr', bounds=Bounds(lb, ub), 
                        jac=(self.jac_fcn if useJac else None),
-                       options={'gtol':1e-6, 'disp': False, 'maxiter':500, 'verbose':2})
+                       options={'gtol':1e-6, 'disp': False, 'maxiter':100, 'verbose':2})
+        # res = minimize(self.cost_fcn, x0, method='trust-constr',  
+        #                jac=(self.jac_fcn if useJac else None),
+        #                options={'gtol':1e-6, 'disp': False, 'maxiter':500, 'verbose':2})
         # res = minimize(self.cost_fcn, x0, method='trust-constr', bounds=Bounds(lb, ub),
         #             options={'gtol':1e-6, 'disp': True, 'maxiter':3000, 'verbose':1})
 
@@ -257,9 +276,10 @@ class Calibrator:
         # res = shgo(self.cost_fcn, bounds, n=100,
         #            options={'f_tol':0.5, 'maxtime':30, 'jac':self.jac_fcn})
 
-        rvecs = list(res.x[:self.npov*3].reshape(self.npov, 1, 1, 3))
-        tvecs = list(res.x[(self.npov*3):(self.npov*6)].reshape(self.npov, 1, 1, 3))
-        objpoints = res.x[self.npov*6:].reshape(1, self.npts, 3)
+        # rvecs = list(res.x[:self.npov*3].reshape(self.npov, 1, 1, 3))
+        # tvecs = list(res.x[(self.npov*3):(self.npov*6)].reshape(self.npov, 1, 1, 3))
+        # objpoints = res.x[self.npov*6:].reshape(1, self.npts, 3)
+        rvecs, tvecs, objpoints = self.unpack(res["x"], NPOV, NPTS)
 
         return rvecs, tvecs, objpoints, res
 
@@ -301,6 +321,135 @@ class Calibrator:
                     # err = imgpoints_pred[i][j].ravel() - posn
                     # plt.quiver(posn[0], )
 
+
+class TreeDetectorColor:
+
+    numBulbs = 50 * 6
+    numColors = 3
+    flashPeriod = 0.5  # sec
+    flashQty = 6  # number of digits
+    AREA_MIN = 10
+    SAT_MIN, VAL_MIN = 30, 30
+
+    @property
+    def FLASH_QTY(self):
+        return self.flashQty
+    
+    @property
+    def FLASH_PERIOD(self):
+        return self.flashPeriod
+
+    def __init__(self):
+        pass
+
+
+    def process_video(self, videoFile):
+
+        FLASH_PERIOD, FLASH_QTY = self.flashPeriod, self.flashQty
+
+        # preload video at downsampled rate
+        cap = cv2.VideoCapture(videoFile)
+        FPS = cap.get(cv2.CAP_PROP_FPS)
+        CAP_PAUSE = 3  # downsample
+
+        bright, frames, ftime, time = [], [], [], []
+        count = -1
+        while True:
+            count += 1
+            ret, frame = cap.read()
+            if ret == False:
+                break
+
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
+            bright.append(np.mean(hsv[:,:,2]))
+            time.append(count / FPS)
+            
+            if count % CAP_PAUSE == 0:
+                frames.append(frame)
+                ftime.append(time[-1])
+
+        bright, time, ftime = np.array(bright), np.array(time), np.array(ftime)
+        bright = signal.detrend(bright)
+
+        # segmenting frames of interest
+        tLastCycle = time[-1] - FLASH_PERIOD*FLASH_QTY
+        DIFF_THRESH = (np.percentile(bright[time > tLastCycle], 200.0/FLASH_QTY) +
+                        np.percentile(bright[time > tLastCycle], 50.0/FLASH_QTY)) / 2.0
+        # find center of last off-region
+        nStep = int(np.round(FLASH_PERIOD * FPS))
+        offRegion = (bright < DIFF_THRESH)# & (time > tLastCycle)
+        offEndInv = len(offRegion) - np.argmax(offRegion[::-1]) - int(nStep * (FLASH_QTY + 1.5)) # last occurrence
+
+        rows = offEndInv + np.arange(FLASH_QTY + 1) * nStep
+        self.frames = [frames[np.argmin(np.abs(ftime - t))] for t in time[rows]]
+        self.bg = self.frames.pop(0)
+
+        plt.plot(time, bright, '.-');
+        plt.plot(ftime, bright[np.isin(time, ftime)], 's');
+        # plt.plot(flashTime, [bright[np.argmin(np.abs(time - t))] for t in flashTime], '^');
+        for t in time[rows]:
+            plt.axvline(t, color='g', linestyle=':')
+        plt.axhline(DIFF_THRESH, color='r', linestyle='--');
+        plt.xlabel('time [s]'), plt.ylabel('brightness [0-255]'), plt.title('Frame Selection')
+
+    def get_image_points(self):
+
+        # estimate bulb location mask overlaying all time-frames
+        blurs = []
+        for img in self.frames:
+            diff = cv2.absdiff(img, self.bg)
+            gray = cv2.cvtColor(diff, cv2.COLOR_RGB2GRAY)
+            blur = cv2.GaussianBlur(gray,(3,3),0)
+            blurs.append(blur)
+
+        blur = np.median(blurs, axis=0).astype(np.uint8)
+        _, mask = cv2.threshold(blur, 20, 1, cv2.THRESH_BINARY)
+
+        hueTol = 180 / self.numColors 
+
+        encoders = []
+        for img in self.frames:
+            imgBlur = cv2.GaussianBlur(img, (11,11), 0)
+            hsv = cv2.cvtColor(imgBlur, cv2.COLOR_RGB2HSV)
+            hue, sat, val = hsv[:,:,0], hsv[:,:,1], hsv[:,:,2]
+
+            hueMean = 0
+            encode = [mask & ((hue < hueTol) | (hue > 180-hueTol)) & (sat > self.SAT_MIN) & (val > self.VAL_MIN)]
+            for i in range(1, self.numColors):
+                hueMean += hueTol
+                encode.append(mask & (hue > hueMean - hueTol/2) & (hue < hueMean + hueTol/2) & 
+                            (sat > self.SAT_MIN) & (val > self.VAL_MIN))
+
+            encoders.append(encode)
+
+        # imLabel = encoders[0][0].astype(np.int32) - 1
+        imLabel = np.zeros_like(encoders[0][0], dtype=np.int32)
+        for i in range(self.FLASH_QTY):
+            for j in range(self.numColors):
+                imLabel += encoders[i][j] * j * (self.numColors ** i)
+
+        imgpoints, labels = [], []
+        for lbl in range(self.numBulbs):
+            im = (imLabel == lbl).astype(np.uint8)
+
+            output = cv2.connectedComponentsWithStats(im, connectivity=4, ltype=cv2.CV_32S)
+            num_elements = output[0]
+            if num_elements < 2:
+                continue
+            # pick index with largest area
+            idx = np.argmax(output[2][1:,-1]) + 1
+            area = output[2][idx,-1]
+            centroid = output[3][idx,:]
+
+            if area > self.AREA_MIN:
+                imgpoints.append(centroid)
+                labels.append(lbl)
+
+        plt.plot(labels, imgpoints, '.-');
+        print("Found %.1f%% of bulbs" % (100*len(imgpoints)/self.numBulbs,))
+
+        return labels, imgpoints, imLabel
 
 
 class TreeDetector:
@@ -430,47 +579,40 @@ def find_tree_transf(objpoints, r00=[0,0,0], t00=[0,0,0], scale0=1.0, rad_base0=
 
     def transf_tree(objpoints, R0, t0, scale, rad_base, height=1.0):
         """Transform objpoints to new frame and calculate conic-model residuals"""
-        xyz = (objpoints.reshape(-1, 3).dot(R0) * scale + t0).reshape(-1, 3)
+        xyz = (objpoints - t0) @ R0 * scale
         r = np.sqrt(xyz[:, 0]**2 + xyz[:, 1]**2)
         zh = (rad_base - r) * height / rad_base
         return xyz, zh
 
-    R0 = cv2.Rodrigues(r00)[0]
+    R0 = cv2.Rodrigues(np.float64(r00))[0]
     t0 = t00
-    # scale = scale0
+    scale = scale0
 
     def cost_fcn(x):
-        # R0 = cv2.Rodrigues(x[:3])[0]
-        # t0 = x[3:6]
-        # scale = x[6]
-        scale = x[0]
-        rad_base = x[1]
+        R0 = cv2.Rodrigues(np.r_[x[:2], 0])[0]
+        t0 = x[2:5]
+        scale = x[5]
+        rad_base = x[6]
 
         xyz, zh = transf_tree(objpoints, R0, t0, scale, rad_base)
         err = xyz[:, 2] - zh
-        return np.mean(err**2) / scale**2
+        return np.mean(err**2)
 
     objp = objpoints.reshape(-1, 3)
     maxt = np.max(np.abs(objp.flatten()))
     maxdt = np.max(np.abs(objp - np.mean(objp)).flatten())
 
-    x0 = np.hstack((r00, t00, scale0, rad_base0))
-    lb = np.array([-2*np.pi]*3 + [-maxt]*3 + [0.1/maxdt, 0.1])
-    ub = np.array([2*np.pi]*3 + [maxt]*3 + [10/maxdt, 2])
-
-    x0 = x0[6:8]
-    lb = lb[6:8]
-    ub = ub[6:8]
+    x0 = np.hstack((r00[:2], t00, scale0, rad_base0))
+    lb = np.array([-2*np.pi]*2 + [-maxt]*3 + [0.1/maxdt, 0.1])
+    ub = np.array([2*np.pi]*2 + [maxt]*3 + [10/maxdt, 2])
 
     res = minimize(cost_fcn, x0, method='trust-constr', bounds=Bounds(lb, ub), 
-                    options={'gtol':1e-6, 'disp': True, 'maxiter':3000, 'verbose':1})
+                    options={'gtol':1e-6, 'disp': True, 'maxiter':3000, 'verbose':2})
 
-    # R0 = cv2.Rodrigues(res.x[:3])[0]
-    # t0 = res.x[3:6]
-    # scale = res.x[6]
-    # rad_base = res.x[7]
-    scale = res.x[0]
-    rad_base = res.x[1]
+    R0 = cv2.Rodrigues(np.r_[res.x[:2], 0])[0]
+    t0 = res.x[2:5]
+    scale = res.x[5]
+    rad_base = res.x[6]
 
     xyz, zh = transf_tree(objpoints, R0, t0, scale, rad_base)
     xyzh = np.hstack((xyz[:, :2], zh.reshape(-1, 1)))
@@ -483,24 +625,24 @@ def find_tree_transf(objpoints, r00=[0,0,0], t00=[0,0,0], scale0=1.0, rad_base0=
             ax.quiver(trans[0], trans[1], trans[2], R[0,2], R[1,2], R[2,2], color='b', length=length)
             ax.text(trans[0], trans[1], trans[2], str("   ")+name, color='black')
 
-        fig = plt.figure(figsize=(10,10))
-        ax = fig.gca(projection='3d')
+        # fig = plt.figure(figsize=(10,10))
+        # ax = fig.gca(projection='3d')
+        ax = plt.figure(figsize=(10,10)).add_subplot(projection='3d')
 
         # plot_frame(ax, np.array([[0],[0],[0]]), np.eye(3), "origin")
-        # ax.plot(xyz[:,0], xyz[:,1], xyz[:,2], 'k-', lw=0.5)
-        ax.plot(xyzh[:,0], xyzh[:,1], xyzh[:,2], 'r.-', lw=0.5)
+        ax.plot(xyz[:,0], xyz[:,1], xyz[:,2], 'k-', lw=0.5)
+        # ax.plot(xyzh[:,0], xyzh[:,1], xyzh[:,2], 'r.-', lw=0.5)
         # ax.scatter(xyz[:,0], xyz[:,1], xyz[:,2],
         #                 c=range(xyz.shape[0]), cmap=plt.cm.RdYlGn)
         # ax.quiver(xyz[:, 0], xyz[:, 1], xyz[:, 2], 
         #           xyzh[:, 0] - xyz[:, 0], xyzh[:, 1] - xyz[:, 1], xyzh[:, 2] - xyz[:, 2])
 
         # ax.set(xlim=(-0.3,0.3), ylim=(-0.3,0.3), zlim=(-0.4,0.2))
-        ax.view_init(0, 90)
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
-        ax.set_xlim((-1, 1)), ax.set_ylim((-1, 1)), ax.set_zlim((-0.5, 1.5))
+        # ax.view_init(elev=45, azim=45, roll=0);
+        ax.view_init(elev=0, azim=90, roll=0);
+        ax.set(xlabel='x', ylabel='y', zlabel='z')
+        # ax.set_xlim((-1, 1)), ax.set_ylim((-1, 1)), ax.set_zlim((-0.5, 1.5))
         plt.show()
 
-    return R0, t0, scale, rad_base, res
+    return R0, t0, scale, rad_base, res, xyz
     

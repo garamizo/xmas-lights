@@ -1,9 +1,11 @@
 #include <FastLED.h>
 
 #define NUM_LED_PER_STRIP 50
-#define NUM_STRIPS 9
+//#define NUM_STRIPS 9  // Knops
+#define NUM_STRIPS 5  // Ribeiros
 #define NUM_LEDS (NUM_LED_PER_STRIP * NUM_STRIPS)
-#define DATA_PIN 5
+//#define DATA_PIN 5   // Knops
+#define DATA_PIN 22  // Ribeiros
 #define BRIGHTNESS  85  // range: 0-255
 
 // Define the array of leds

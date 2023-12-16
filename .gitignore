@@ -1,6 +1,8 @@
 *.asv
+credentials.h
 .vscode
 .code-workspace
 data
 __pycache__/
 *.pickle
+build/

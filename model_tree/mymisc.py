@@ -54,7 +54,8 @@ def print_c_matrix(a):
     for i in range(a.shape[0]):
         msg += "{"
         for j in range(a.shape[1]):
-            msg += "%.5f, " % a[i,j]
+            msg += "%d, " % a[i,j]
+            # msg += "%.5f, " % a[i,j]
         msg = msg[:-2] + "},\n"
     msg = msg[:-2] + "}"
     return msg

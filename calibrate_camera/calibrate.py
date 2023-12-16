@@ -12,8 +12,6 @@ def calibrate_fisheye(images_path, CHECKERBOARD=(7, 5)):
     """Calibrate a camera with fisheye lenses"""
 
     subpix_criteria = (cv2.TERM_CRITERIA_EPS+cv2.TERM_CRITERIA_MAX_ITER, 30, 0.1)
-    calibration_flags = cv2.fisheye.CALIB_RECOMPUTE_EXTRINSIC + \
-        cv2.fisheye.CALIB_CHECK_COND + cv2.fisheye.CALIB_FIX_SKEW
     corner_flags = cv2.CALIB_CB_ADAPTIVE_THRESH+cv2.CALIB_CB_FAST_CHECK+cv2.CALIB_CB_NORMALIZE_IMAGE
 
     objp = np.zeros((1, CHECKERBOARD[0]*CHECKERBOARD[1], 3), np.float32)
@@ -40,39 +38,30 @@ def calibrate_fisheye(images_path, CHECKERBOARD=(7, 5)):
             imgpoints.append(corners)
             imgfiles.append(fname)
 
-    # N_OK = len(objpoints)
-    # K = np.zeros((3, 3))
-    # D = np.zeros((4, 1))
-    # rvecs = [np.zeros((1, 1, 3), dtype=np.float64) for i in range(N_OK)]
-    # tvecs = [np.zeros((1, 1, 3), dtype=np.float64) for i in range(N_OK)]
+    img_size = (gray.shape[1], gray.shape[0])
+    N_OK = len(objpoints)
+
+    # ===================
+
+    flags = None
+    rms, K, D, rvecs, tvecs = cv2.calibrateCamera(objpoints, 
+        imgpoints, img_size, cameraMatrix=None, distCoeffs=None, flags=flags,
+        criteria=(cv2.TERM_CRITERIA_EPS+cv2.TERM_CRITERIA_MAX_ITER, 30, 1e-6))
+    # ====================
+
+    # calibration_flags = cv2.fisheye.CALIB_RECOMPUTE_EXTRINSIC + \
+    #         cv2.fisheye.CALIB_CHECK_COND + cv2.fisheye.CALIB_FIX_SKEW
     # rms, K, D, rvecs, tvecs = \
     #     cv2.fisheye.calibrate(
     #         objpoints,
     #         imgpoints,
     #         gray.shape[::-1],
-    #         K,
-    #         D,
-    #         rvecs,
-    #         tvecs,
-    #         calibration_flags,
-    #         (cv2.TERM_CRITERIA_EPS+cv2.TERM_CRITERIA_MAX_ITER, 30, 1e-6)
+    #         K=None,
+    #         D=None,
+    #         flags=calibration_flags,
+    #         criteria=(cv2.TERM_CRITERIA_EPS+cv2.TERM_CRITERIA_MAX_ITER, 30, 1e-6)
     #     )
-
-    img_size = (gray.shape[1], gray.shape[0])
-
-    N_OK = len(objpoints)
-    # K = np.zeros((3, 3))
-    # D = np.zeros((4, 1))
-    rms, K, D, rvecs, tvecs = \
-        cv2.fisheye.calibrate(
-            objpoints,
-            imgpoints,
-            gray.shape[::-1],
-            K=None,
-            D=None,
-            flags=calibration_flags,
-            criteria=(cv2.TERM_CRITERIA_EPS+cv2.TERM_CRITERIA_MAX_ITER, 30, 1e-6)
-        )
+        
     
     print("Found " + str(N_OK) + " valid images for calibration")
     print("DIM=" + str(_img_shape[::-1]))
