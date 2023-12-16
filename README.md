@@ -1,6 +1,6 @@
 # xmas-lights
 
-Animates a Christmas tree with colorfull geometric patterns.
+Animates a Christmas tree with colorful geometric patterns.
 
 ![](img/final_updated.gif) 
 
