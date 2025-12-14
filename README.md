@@ -1,5 +1,38 @@
 # xmas-lights
 
+## Installation
+
+Clone the repository
+```
+git clone https://github.com/garamizo/xmas-lights.git
+cd xmas-lights
+```
+Create and activate environment
+```
+python3 -m venv .env
+```
+On Ubuntu
+```
+. .env/bin/activate
+```
+On Windows
+```
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser  # give permission
+.env\Scripts\Activate.ps1
+```
+Update pip and build tools
+```
+pip install --upgrade pip setuptools wheel
+pip install -e .
+```
+Verify installation
+```
+python -c "import xmas_lights; print(xmas_lights.__version__)"
+```
+
+
+Setup python env
+
 Animates a Christmas tree with colorful geometric patterns.
 
 ![](img/final_updated.gif) 

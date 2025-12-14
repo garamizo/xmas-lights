@@ -6,7 +6,7 @@
 //#define DATA_PIN 5   // Knops
 //#define BRIGHTNESS  85  // range: 0-255
 
-#define NUM_STRIPS 6  // Ribeiros
+#define NUM_STRIPS 8  // Ribeiros
 #define DATA_PIN 13  // Ribeiros
 #define BRIGHTNESS  255  // range: 0-255
 

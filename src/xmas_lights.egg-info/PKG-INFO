@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: xmas-lights
+Version: 0.1.0
+Summary: Bundle adjustment for Christmas tree light bulbs
+Author: Guilherme Aramizo Ribeiro
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: opencv-python
+Requires-Dist: matplotlib
+Requires-Dist: torch
+Requires-Dist: torchvision

@@ -3,7 +3,7 @@
 #include "credentials.h"  // WIFI_SSID, WIFI_PASS, APP_KEY, APP_SECRET, LIGHT_ID
 
 #define LED_PIN     13  // LED strip control pin
-#define NUM_LEDS    300  // 9 strips, 50 bulbs each
+#define NUM_LEDS    400  // 8 strips, 50 bulbs each
 #define BRIGHTNESS  128  // range: 0-255
 
 #ifdef ENABLE_DEBUG
