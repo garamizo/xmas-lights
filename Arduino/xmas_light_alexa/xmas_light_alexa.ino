@@ -4,7 +4,7 @@
 
 #define LED_PIN     13  // LED strip control pin
 #define NUM_LEDS    400  // 8 strips, 50 bulbs each
-#define BRIGHTNESS  128  // range: 0-255
+#define BRIGHTNESS  255  // range: 0-255
 
 #ifdef ENABLE_DEBUG
   #define DEBUG_ESP_PORT Serial
@@ -124,19 +124,19 @@ void LedHandle()
 {
   uint32_t t = millis();
   
- static ExplosionPattern explosion(t, true);
- if (!explosion.update(t))
-   explosion.reset(t);
+// static ExplosionPattern explosion(t, true);
+// if (!explosion.update(t))
+//   explosion.reset(t);
 
- static ExplosionPattern explosion2(t, true);
- if (!explosion2.update(t))
-   explosion2.reset(t);
+// static ExplosionPattern explosion2(t, true);
+// if (!explosion2.update(t))
+//   explosion2.reset(t);
 
-  static LinearPattern pattern(t, 128);
+  static LinearPattern pattern(t, 255);
 //  static AngularPattern pattern(t, 128);
   if (!pattern.update(t))
   {
-    pattern.reset(t, 128);
+    pattern.reset(t, 255);
 //    Serial.println(pattern.msg);
   }
 
@@ -145,7 +145,7 @@ void LedHandle()
     uint8_t hue = 0, sat = 255, val = 0;
     
     pattern.get_hsv(i, hue, sat, val);
-    explosion.get_hsv(i, hue, sat, val);
+//    explosion.get_hsv(i, hue, sat, val);
 //    explosion2.get_hsv(i, hue, sat, val);
 
     leds[i] = CHSV(hue, sat, val);
@@ -168,5 +168,6 @@ void loop() {
 
   if (device_state.powerState == true)
     LedHandle();
-  delay(1);
+//  delay(1);
+  yield();
 }
