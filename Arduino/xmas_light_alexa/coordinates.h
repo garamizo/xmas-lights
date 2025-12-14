@@ -5,7 +5,7 @@ const float diameter = 72;  // tree base diameter
 
 
 const int8_t cartesian[NUM_LEDS][3] = {
-    {1, 8, 48},
+    {1, 8, 0},
     {22, -1, 4},
     {26, -5, 9},
     {22, -10, 18},
@@ -439,7 +439,7 @@ class AngularPattern
      
       
     hue = random(255);
-    sat = 0;//random(255);
+    sat = 50;//random(255);
     val = val_;
     update(t);
   }
@@ -463,15 +463,15 @@ class AngularPattern
 class LinearPattern
 {
   const int16_t LEN = height;  // len unit
-  const int32_t TIME_FADE = 500;
+  const int32_t TIME_FADE = 300;
   int16_t PERIOD = 2000;  // ms per len
   int16_t NUM_STRIPES = 2;
-  int16_t LEN_STRIPES = LEN / 4;
+  int16_t LEN_STRIPES = LEN / 2;
 
   int16_t dist[NUM_LEDS];  // dist to base plane
   int16_t hue, sat, val;
   int16_t valMax;
-  int16_t phase;  // deg
+  int32_t phase;  // deg
   int32_t timeout = 0;
   uint32_t t0 = 0;
 
@@ -485,33 +485,30 @@ class LinearPattern
 
   void reset(uint32_t t, uint8_t val_ = 255)
   {
-    PERIOD = random(2000, 3000);
-    NUM_STRIPES = random(2, 4);
-//    PERIOD = 2265;
-//    NUM_STRIPES = 2;
+    PERIOD = random(1000, 2000);
+    NUM_STRIPES = random(3, 5);
     
     LEN_STRIPES = LEN / 2;
     t0 = t;
-    timeout = t + random(10000, 12000);
+    timeout = t + random(10000, 15000);
     
     hue = random(255);
-    sat = random(32);
+    sat = 200;//random(32);
     valMax = val_;
     
     float nx = random(-100, 100),
           ny = random(-100, 100),
           nz = random(-100, 100);
-//    float nx = -87, 
-//          ny = -72, 
-//          nz = -7;
-    sprintf(msg, "N: (%d %d %d), PERIOD: %d, NUM_STRIPES: %d, timeout: %d, sat: %d", 
-      int(nx), int(ny), int(nz), PERIOD, NUM_STRIPES, timeout-t, sat);
 
-    if (nx == 0 && ny == 0 && nz == 0) nz = 1.0;
-    float n = NUM_STRIPES / sqrt(nx*nx + ny*ny + nz*nz);
-    nx *= n;
-    ny *= n;
-    nz *= n;
+//    sprintf(msg, "N: (%d %d %d), PERIOD: %d, NUM_STRIPES: %d, timeout: %d, sat: %d", 
+//      int(nx), int(ny), int(nz), PERIOD, NUM_STRIPES, timeout-t, sat);
+
+    if (nx == 0 && ny == 0 && nz == 0) 
+      nz = 1.0;
+    float n = sqrt(nx*nx + ny*ny + nz*nz);
+    nx /= n;
+    ny /= n;
+    nz /= n;
 
     for (int i = 0; i < NUM_LEDS; i++)
       dist[i] = round(nx * cartesian[i][0] + ny * cartesian[i][1] + nz * cartesian[i][2]);
@@ -520,10 +517,18 @@ class LinearPattern
   inline bool update(uint32_t t)
   {
     phase = t * LEN / PERIOD;
-    if (t - t0 <= TIME_FADE)            val = map(t - t0, 0, TIME_FADE, 0, valMax);
-    else if (t > timeout)               val = 0;
-    else if (timeout - t <= TIME_FADE)  val = map(timeout - t, 0, TIME_FADE, 0, valMax);
-    else                                val = valMax;
+    if (t - t0 <= TIME_FADE) {
+      val = map(t - t0, 0, TIME_FADE, 0, valMax);
+    }
+    else if (t > timeout) {
+      val = 0;
+    }
+    else if (timeout - t <= TIME_FADE) {
+      val = map(timeout - t, 0, TIME_FADE, 0, valMax);
+    }
+    else {
+      val = valMax;
+    }
 
     return (t < timeout);
   }
@@ -532,7 +537,7 @@ class LinearPattern
   {
     int16_t ang = (dist[i] + phase) % LEN;
     sat_ = sat;
-    hue_ = hue;
+    hue_ = constrain(map(dist[i], 0, LEN, 0, 255), 0, 255);
     val_ = constrain(map(abs(ang - LEN_STRIPES/2), 0, LEN_STRIPES/2, val, 0), 0, val);
   }
 };
@@ -541,8 +546,8 @@ class LinearPattern
 class ExplosionPattern
 {
  public:
- const uint32_t DT_MIN = 900,
-                DT_MAX = 1200;
+ const uint32_t DT_MIN = 10000,
+                DT_MAX = 10001;
  const uint32_t DT_UP = 200;
  const int EXPLOSION_SIZE = height / 2;
  
@@ -564,7 +569,7 @@ class ExplosionPattern
  {
    t0 = t;
    timeout = t + random(DT_MIN, DT_MAX);
-   hue = 150;//random(0, 255);
+   hue = random(0, 255);
 
    // pick one bulb as explosion center
    int iCenter = random(NUM_LEDS);
