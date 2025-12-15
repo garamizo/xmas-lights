@@ -1,5 +1,15 @@
 # xmas-lights
 
+## Usage
+
+1. Program tree controller with `Arduino/calibrate_xmas_tree_colorCode`
+2. Record 5+ video of tree from different POVs
+3. Run `notebooks/bundle_adjust_tree.ipynb`
+4. Copy `const int8_t cartesian` into `Arduino/xmas_light_alexa/coordinates.h`
+5. Get device info at Sinric Pro website
+6. Update credentials file `Arduino/xmas_light_alexa/credentials.h`
+7. Program tree controller with `Arduino/xmas_light_alexa`
+
 ## Installation
 
 Clone the repository

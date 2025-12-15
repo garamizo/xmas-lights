@@ -44,7 +44,7 @@ def select_frames(frames: List[np.ndarray]) -> Tuple[List[np.ndarray], np.ndarra
 
 def init_camera_matrix(frame):
     h, w, _ = frame.shape
-    f = 0.6 * h
+    f = 0.673 * h
     return np.array([[f, 0, w/2], [0, f, h/2], [0, 0, 1]], np.float32)
 
 
@@ -134,3 +134,117 @@ def xy_from_image(im_id, fg):
 
     return xys[inliers], ids[inliers], np.asarray(areas)[inliers]
 
+
+def filt_sequence_inliers(pts, ids=None):
+    if ids is None:
+        ids = np.arange(pts.shape[0])
+    std_pts = np.diff(np.quantile(pts - np.median(pts,0), [0.2, 0.8]))
+    std_ids = np.diff(np.quantile(ids, [0.2, 0.8]))
+    DS_MAX = 200 * std_pts / std_ids
+
+    ds = np.sum(np.diff(pts, axis=0)**2, 1)**0.5 / np.diff(ids) / DS_MAX
+    inliers =  np.r_[True, 
+        (ds[1:] < 1) | (ds[:-1] < 1),
+        True]
+    pts_filt = pts.copy()
+    pts_filt[~inliers] = np.array([np.interp(ids[~inliers], ids[inliers], ptdim[inliers]) 
+                                for ptdim in pts_filt.T]).T
+    return pts_filt, inliers
+
+
+def init_camera_pose(pts_xy: List[np.ndarray], cameraMatrix: np.ndarray):
+    """
+    Docstring for init_camera_pose
+    Returns edges dict with
+        i:
+        j:
+        T_ij:
+        intersect_count:
+    
+    :param pts_xy: Description
+    :type pts_xy: List[np.ndarray]
+    :param cameraMatrix: Description
+    :type cameraMatrix: np.ndarray
+    """
+    num_views = len(pts_xy)
+
+    edges = []   # pose-graph edges
+    # assume first view camera is origin, compute pose of other views in respect to first
+    for i in range(num_views):
+        for j in range(num_views):#range(i+1, num_views):
+            # ids, idxi, idxj = np.intersect1d(caps[i]['ids'], caps[j]['ids'], 
+            #                                 return_indices=True)
+            ptsi, ptsj = pts_xy[i], pts_xy[j]
+            ids_rows = ~(np.any(np.isnan(ptsi), 1) | np.any(np.isnan(ptsj), 1))
+            ptsi, ptsj = ptsi[ids_rows], ptsj[ids_rows]
+
+            # assert np.all(caps[i]['ids'][idxi] == caps[j]['ids'][idxj]), "oops"
+
+            E, mask = cv2.findEssentialMat(ptsi, ptsj, cameraMatrix=cameraMatrix, 
+                                method=cv2.RANSAC, prob=0.995, threshold=3.0)
+            ptsi, ptsj = ptsi[mask.ravel() == 1], ptsj[mask.ravel() == 1]
+            assert (E is not None) & (E.shape[0] == 3), "No Essential solution"
+            _, R, t, _ = cv2.recoverPose(E, ptsi, ptsj, cameraMatrix=cameraMatrix)
+
+            # Normalize scale assuming target has std=1
+            P1 = cameraMatrix @ np.hstack((np.eye(3), np.zeros((3, 1))))
+            P2 = cameraMatrix @ np.hstack((R, t))
+
+            # Triangulate
+            X_h = cv2.triangulatePoints(P1, P2, ptsi.T, ptsj.T)
+            X = (X_h[:3] / X_h[3]).T
+            scale = np.std(X - X.mean(axis=0))
+
+            # get tf0j
+            edges.append({"i": i, 
+                          "j": j, 
+                          "T_ij": np.r_[np.c_[R, t/scale], [[0, 0, 0, 1]]], 
+                          "intersect_count": int(sum(mask.flatten())),
+                          })
+
+    return edges
+
+
+def solve_pose_graph(edges, method="direct"):
+    
+    if method == "direct":
+        nodes = np.unique([e["i"] for e in edges] + [e["j"] for e in edges])
+        num_views = len(nodes)
+        tfs = np.ones((num_views, 4, 4)) * np.nan
+        tfs[0] = np.eye(4)
+        for e in edges:
+            if e['i'] == 0:
+                tfs[e['j']] = e['T_ij']
+
+        assert ~np.isnan(tfs).any(), "Graph could not be completed"
+        return tfs
+    else:
+        raise ValueError(f"Methods available: {", ".join(['direct'])}")
+           
+
+def init_world_positions(pts_xy: List[np.ndarray], tfs: List[np.ndarray], cameraMatrix: np.ndarray):
+    pts_dict = []#np.ones((num_views, num_views, num_bulbs, 3)) * np.nan
+    num_views = len(pts_xy)
+    num_bulbs = pts_xy[0].shape[0]
+
+    for i in range(num_views):
+        for j in range(num_views):#range(i+1, num_views):
+
+            ptsi, ptsj = pts_xy[i], pts_xy[j]
+            ids_rows = ~(np.any(np.isnan(ptsi), 1) | np.any(np.isnan(ptsj), 1))
+            ptsi, ptsj = ptsi[ids_rows], ptsj[ids_rows]
+                
+            P1 = cameraMatrix @ tfs[i,:3,:]
+            P2 = cameraMatrix @ tfs[j,:3,:]
+
+            # Triangulate
+            X_h = cv2.triangulatePoints(P1, P2, ptsi.T, ptsj.T)
+
+            pts_dict.append(np.ones((num_bulbs, 3)) * np.nan)
+            pts_dict[-1][ids_rows] = (X_h[:3] / X_h[3]).T
+
+    pts = np.nanmedian(pts_dict, axis=0)
+    pts_filt = pts.copy()
+    pts_filt[np.any(np.isnan(pts), 1)] = np.nanmedian(pts, 0)
+    pts_filt, _ = filt_sequence_inliers(pts_filt, np.arange(num_bulbs))
+    return pts_filt
